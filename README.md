@@ -196,6 +196,12 @@ Start the report server:
 xx report serve
 ```
 
+Show the effective local setup:
+
+```bash
+xx doctor
+```
+
 Then open:
 
 ```text
@@ -232,6 +238,7 @@ Rows older than `retention_days` are pruned automatically. The report window def
 - pipelines are allowed
 - operators such as `&&`, `||`, and `;` are treated as high-risk
 - missing executables in the generated command are treated as high-risk
+- if command startup fails, `xx` reports a clean execution error instead of a Python traceback
 
 ## Limitations
 

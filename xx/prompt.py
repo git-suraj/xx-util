@@ -16,6 +16,8 @@ def build_prompt(user_request: str, machine: MachineContext) -> str:
             "Return exactly one shell command.",
             "Pipelines are allowed when useful.",
             "Prefer installed commands from the available_commands list.",
+            "Prefer modern installed utilities when they fit: rg over grep, fd over find, bat over cat, jq for JSON, fzf for interactive preview.",
+            "If a modern utility is installed and clearly better for the request, use it instead of a more primitive fallback.",
             "Avoid interactive commands unless explicitly requested.",
             "Avoid destructive commands unless the user clearly asked for them.",
             "Return JSON only with keys command, reason, risk.",

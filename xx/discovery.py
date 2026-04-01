@@ -79,11 +79,14 @@ def _read_cache(path_hash: str) -> list[str] | None:
 
 
 def _write_cache(path_hash: str, commands: list[str]) -> None:
-    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "path_hash": path_hash,
-        "created_at": time.time(),
-        "commands": commands,
-    }
-    with CACHE_PATH.open("w") as handle:
-        json.dump(payload, handle)
+    try:
+        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "path_hash": path_hash,
+            "created_at": time.time(),
+            "commands": commands,
+        }
+        with CACHE_PATH.open("w") as handle:
+            json.dump(payload, handle)
+    except OSError:
+        return

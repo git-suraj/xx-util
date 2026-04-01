@@ -7,7 +7,7 @@ from pathlib import Path
 
 from xx.config import ConfigError, default_config_path, load_config
 from xx.discovery import discover_machine_context
-from xx.executor import execute_command
+from xx.executor import ExecutionError, execute_command
 from xx.providers import ProviderError, generate_command
 from xx.reporting import serve_report
 from xx.safety import assess_command
@@ -24,6 +24,8 @@ def main() -> int:
         report_parser = _build_report_parser()
         args = report_parser.parse_args(report_argv)
         return _run_report_command(args)
+    if argv[:1] == ["doctor"] and len(argv) == 1:
+        return _run_doctor()
 
     parser = _build_main_parser()
     args = parser.parse_args(argv)
@@ -97,7 +99,12 @@ def main() -> int:
             print("Execution cancelled.")
             return 0
 
-        exit_code = execute_command(proposal.command, machine.shell)
+        try:
+            exit_code = execute_command(proposal.command, machine.shell)
+        except ExecutionError as exc:
+            update_execution_outcome(conn, record_id, executed=False, approved=True, exit_code=None)
+            print(f"Execution error: {exc}", file=sys.stderr)
+            return 1
         update_execution_outcome(conn, record_id, executed=True, approved=True, exit_code=exit_code)
         return exit_code
     finally:
@@ -115,6 +122,27 @@ def _run_report_command(args: argparse.Namespace) -> int:
         print(f"Config error: {exc}", file=sys.stderr)
         return 2
     return serve_report(config.reporting)
+
+
+def _run_doctor() -> int:
+    try:
+        config = load_config(require_provider=False)
+    except ConfigError as exc:
+        print(f"Config error: {exc}", file=sys.stderr)
+        return 2
+
+    machine = discover_machine_context(cache_enabled=config.cache_enabled)
+    print(f"config_path: {config.config_path}")
+    print(f"provider: {config.provider or '(not set)'}")
+    print(f"model: {config.model or '(not set)'}")
+    print(f"shell: {machine.shell}")
+    print(f"cwd: {machine.cwd}")
+    print(f"available_commands: {len(machine.available_commands)}")
+    print(f"report_database: {config.reporting.database_path}")
+    print(f"report_url: http://{config.reporting.host}:{config.reporting.port}/report")
+    print(f"retention_days: {config.reporting.retention_days}")
+    print(f"default_report_days: {config.reporting.default_report_days}")
+    return 0
 
 
 def _confirm() -> bool:
