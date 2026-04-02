@@ -3,28 +3,32 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
+import threading
+
+from xx.types import CommandExecutionResult
 
 
 class ExecutionError(RuntimeError):
     """Raised when command execution cannot be started."""
 
 
-def execute_command(command: str, shell: str) -> int:
+def execute_command(command: str, shell: str) -> CommandExecutionResult:
     resolved_shell = _resolve_shell(shell)
     try:
-        completed = subprocess.run(command, shell=True, executable=resolved_shell, check=False)
+        completed = _run_command(command, resolved_shell)
     except OSError as exc:
         fallback_shell = "/bin/sh"
         if resolved_shell != fallback_shell:
             try:
-                completed = subprocess.run(command, shell=True, executable=fallback_shell, check=False)
+                completed = _run_command(command, fallback_shell)
             except OSError as fallback_exc:
                 raise ExecutionError(
                     f"Unable to execute command via {resolved_shell} or {fallback_shell}: {fallback_exc}"
                 ) from fallback_exc
         else:
             raise ExecutionError(f"Unable to execute command via {resolved_shell}: {exc}") from exc
-    return int(completed.returncode)
+    return completed
 
 
 def _resolve_shell(shell: str) -> str:
@@ -41,3 +45,43 @@ def _resolve_shell(shell: str) -> str:
     if resolved:
         return resolved
     return "/bin/sh"
+
+
+def _run_command(command: str, shell: str) -> CommandExecutionResult:
+    process = subprocess.Popen(
+        command,
+        shell=True,
+        executable=shell,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+
+    def reader(stream, sink, collector) -> None:
+        try:
+            for chunk in iter(stream.readline, ""):
+                sink.write(chunk)
+                sink.flush()
+                collector.append(chunk)
+        finally:
+            stream.close()
+
+    stdout_thread = threading.Thread(
+        target=reader, args=(process.stdout, sys.stdout, stdout_chunks), daemon=True
+    )
+    stderr_thread = threading.Thread(
+        target=reader, args=(process.stderr, sys.stderr, stderr_chunks), daemon=True
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    exit_code = process.wait()
+    stdout_thread.join()
+    stderr_thread.join()
+    return CommandExecutionResult(
+        exit_code=int(exit_code),
+        stdout="".join(stdout_chunks),
+        stderr="".join(stderr_chunks),
+    )

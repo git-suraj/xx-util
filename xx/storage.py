@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from xx.types import ExecutionRecord
 
@@ -37,7 +38,7 @@ def connect(database_path: Path) -> sqlite3.Connection:
 
 def prune_old_records(conn: sqlite3.Connection, retention_days: int) -> None:
     conn.execute(
-        "DELETE FROM execution_logs WHERE invoked_at < datetime('now', ?)",
+        "DELETE FROM execution_logs WHERE invoked_at < datetime('now', 'localtime', ?)",
         (f"-{retention_days} days",),
     )
     conn.commit()
@@ -86,52 +87,137 @@ def update_execution_outcome(
     conn.commit()
 
 
-def fetch_executions(conn: sqlite3.Connection, days: int) -> list[sqlite3.Row]:
+def fetch_executions(
+    conn: sqlite3.Connection,
+    *,
+    days: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> list[sqlite3.Row]:
+    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to)
+    offset = max(0, page - 1) * page_size
     cur = conn.execute(
-        """
+        f"""
         SELECT invoked_at, user_input, generated_command, executed, approved,
                provider, model, prompt_tokens, completion_tokens, total_tokens,
                risk_level, exit_code, cwd
         FROM execution_logs
-        WHERE invoked_at >= datetime('now', ?)
+        {where_sql}
         ORDER BY invoked_at DESC
+        LIMIT ? OFFSET ?
         """,
-        (f"-{days} days",),
+        (*params, page_size, offset),
     )
     return list(cur.fetchall())
 
 
-def fetch_token_summary_by_model(conn: sqlite3.Connection, days: int) -> list[sqlite3.Row]:
+def count_executions(
+    conn: sqlite3.Connection,
+    *,
+    days: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> int:
+    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to)
     cur = conn.execute(
-        """
+        f"""
+        SELECT COUNT(*) AS total
+        FROM execution_logs
+        {where_sql}
+        """,
+        params,
+    )
+    row = cur.fetchone()
+    return int(row["total"]) if row else 0
+
+
+def fetch_token_summary_by_model(
+    conn: sqlite3.Connection,
+    *,
+    days: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[sqlite3.Row]:
+    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to)
+    cur = conn.execute(
+        f"""
         SELECT model, provider,
                COUNT(*) AS invocations,
                COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
                COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
                COALESCE(SUM(total_tokens), 0) AS total_tokens
         FROM execution_logs
-        WHERE invoked_at >= datetime('now', ?)
+        {where_sql}
         GROUP BY provider, model
         ORDER BY total_tokens DESC, provider ASC, model ASC
         """,
-        (f"-{days} days",),
+        params,
     )
     return list(cur.fetchall())
 
 
-def fetch_token_summary_by_provider(conn: sqlite3.Connection, days: int) -> list[sqlite3.Row]:
+def fetch_token_summary_by_provider(
+    conn: sqlite3.Connection,
+    *,
+    days: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[sqlite3.Row]:
+    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to)
     cur = conn.execute(
-        """
+        f"""
         SELECT provider,
                COUNT(*) AS invocations,
                COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
                COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
                COALESCE(SUM(total_tokens), 0) AS total_tokens
         FROM execution_logs
-        WHERE invoked_at >= datetime('now', ?)
+        {where_sql}
         GROUP BY provider
         ORDER BY total_tokens DESC, provider ASC
         """,
-        (f"-{days} days",),
+        params,
     )
     return list(cur.fetchall())
+
+
+def _build_filters(
+    *,
+    days: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> tuple[str, tuple[Any, ...]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if date_from:
+        clauses.append("invoked_at >= datetime(?)")
+        params.append(_normalize_lower_bound(date_from))
+    if date_to:
+        clauses.append("invoked_at <= datetime(?)")
+        params.append(_normalize_upper_bound(date_to))
+    if not date_from and not date_to and days is not None:
+        clauses.append("invoked_at >= datetime('now', 'localtime', ?)")
+        params.append(f"-{days} days")
+    if not clauses:
+        return "", tuple()
+    return "WHERE " + " AND ".join(clauses), tuple(params)
+
+
+def _normalize_lower_bound(value: str) -> str:
+    normalized = value.strip().replace("T", " ")
+    if len(normalized) == 10:
+        return f"{normalized} 00:00:00"
+    if len(normalized) == 16:
+        return f"{normalized}:00"
+    return normalized
+
+
+def _normalize_upper_bound(value: str) -> str:
+    normalized = value.strip().replace("T", " ")
+    if len(normalized) == 10:
+        return f"{normalized} 23:59:59"
+    if len(normalized) == 16:
+        return f"{normalized}:59"
+    return normalized

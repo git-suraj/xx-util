@@ -19,10 +19,10 @@ class Config:
     model: str
     api_key: str | None = None
     base_url: str | None = None
+    repair_attempts: int = 3
     print_only: bool = False
     debug: bool = False
     cache_enabled: bool = True
-    force: bool = False
     config_path: Path | None = None
     reporting: ReportingConfig = field(default_factory=ReportingConfig)
 
@@ -76,3 +76,10 @@ class ExecutionRecord:
     risk_level: str
     exit_code: int | None
     cwd: str
+
+
+@dataclass(slots=True)
+class CommandExecutionResult:
+    exit_code: int
+    stdout: str
+    stderr: str

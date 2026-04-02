@@ -13,7 +13,7 @@
   - Ollama
 - real executable discovery from `PATH`
 - pipeline support
-- high-risk command blocking unless `--force` is supplied
+- high-risk command confirmation
 - confirmation before execution
 - SQLite-backed audit log
 - reporting server with:
@@ -64,6 +64,7 @@ Example:
 provider = "openai"
 model = "gpt-4.1-mini"
 api_key = "your-api-key"
+repair_attempts = 3
 # base_url = "https://api.openai.com/v1"
 
 [reporting]
@@ -93,6 +94,8 @@ Expected top-level config fields:
   Required for every provider except `ollama`.
 - `base_url`
   Optional for `openai`, `openai_compatible`, `anthropic`, `mistral`, and `ollama`.
+- `repair_attempts`
+  Optional. Number of auto-repair attempts after a failed command. Defaults to `3`.
 
 Provider-specific examples:
 
@@ -184,12 +187,6 @@ Override provider or model:
 xx --provider ollama --model llama3.1 "find json files larger than 1 MB"
 ```
 
-Allow a high-risk command:
-
-```bash
-xx --force "delete all build artifacts in this directory"
-```
-
 Start the report server:
 
 ```bash
@@ -200,6 +197,12 @@ Show the effective local setup:
 
 ```bash
 xx doctor
+```
+
+Normalize old UTC-style report timestamps into local time:
+
+```bash
+xx migrate timestamps
 ```
 
 Then open:
@@ -213,6 +216,24 @@ JSON endpoints:
 - `/api/executions?days=90`
 - `/api/tokens/by-model?days=90`
 - `/api/tokens/by-provider?days=90`
+
+Execution report filtering and pagination:
+
+- `/report?days=30`
+- `/report?from=2026-01-01&to=2026-03-31`
+- `/report?from=2026-01-01 09:00&to=2026-01-01 18:00`
+- `/report?from=2026-01-01&to=2026-03-31&page=2&page_size=50`
+- `/api/executions?from=2026-01-01 09:00&to=2026-01-01 18:00&page=1&page_size=50`
+
+Rules:
+
+- `from` and `to` are inclusive local date or date-time filters
+- accepted formats are `YYYY-MM-DD`, `YYYY-MM-DD HH:MM`, and `YYYY-MM-DDTHH:MM`
+- the HTML report expects 24-hour time input in `YYYY-MM-DD HH:MM` format
+- if `from` or `to` is provided, that date range takes precedence over `days`
+- execution pagination supports `page` and `page_size`
+- the HTML report shows `from` and `to` with time selection at the top, and page size near the execution table
+- token summary endpoints accept `days`, `from`, and `to`
 
 ## Reporting
 
@@ -230,11 +251,13 @@ Every invocation writes an audit row after a provider response is received. The 
 - working directory
 
 Rows older than `retention_days` are pruned automatically. The report window defaults to `default_report_days`.
+If a command fails, `xx` can ask the model for an amended command up to `repair_attempts` times. The default is `3`.
+If you created rows before the switch to local timestamps, run `xx migrate timestamps` once to rewrite those legacy rows into local time.
 
 ## Safety model
 
 - all commands require confirmation before execution
-- high-risk commands are refused unless `--force` is present
+- high-risk commands still require confirmation before execution
 - pipelines are allowed
 - operators such as `&&`, `||`, and `;` are treated as high-risk
 - missing executables in the generated command are treated as high-risk

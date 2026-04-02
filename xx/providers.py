@@ -4,7 +4,7 @@ import json
 import urllib.error
 import urllib.request
 
-from xx.prompt import build_prompt
+from xx.prompt import build_prompt, build_repair_prompt
 from xx.types import CommandProposal, Config, MachineContext, TokenUsage
 
 
@@ -13,26 +13,51 @@ class ProviderError(RuntimeError):
 
 
 def generate_command(config: Config, machine: MachineContext, user_request: str) -> CommandProposal:
+    prompt_text = build_prompt(user_request, machine)
+    return _generate_from_prompt(config, prompt_text)
+
+
+def generate_repaired_command(
+    config: Config,
+    machine: MachineContext,
+    user_request: str,
+    failed_command: str,
+    exit_code: int,
+    stdout: str,
+    stderr: str,
+) -> CommandProposal:
+    prompt_text = build_repair_prompt(
+        user_request,
+        machine,
+        failed_command,
+        exit_code,
+        stdout,
+        stderr,
+    )
+    return _generate_from_prompt(config, prompt_text)
+
+
+def _generate_from_prompt(config: Config, prompt_text: str) -> CommandProposal:
     provider = config.provider
     if provider in {"openai", "openai_compatible", "mistral"}:
-        return _openai_like_generate(config, machine, user_request)
+        return _openai_like_generate(config, prompt_text)
     if provider == "anthropic":
-        return _anthropic_generate(config, machine, user_request)
+        return _anthropic_generate(config, prompt_text)
     if provider == "gemini":
-        return _gemini_generate(config, machine, user_request)
+        return _gemini_generate(config, prompt_text)
     if provider == "ollama":
-        return _ollama_generate(config, machine, user_request)
+        return _ollama_generate(config, prompt_text)
     raise ProviderError(f"Unsupported provider: {provider}")
 
 
-def _openai_like_generate(config: Config, machine: MachineContext, user_request: str) -> CommandProposal:
+def _openai_like_generate(config: Config, prompt_text: str) -> CommandProposal:
     base_url = config.base_url or _default_base_url(config.provider)
     payload = {
         "model": config.model,
         "response_format": {"type": "json_object"},
         "messages": [
             {"role": "system", "content": "You generate exactly one shell command in JSON."},
-            {"role": "user", "content": build_prompt(user_request, machine)},
+            {"role": "user", "content": prompt_text},
         ],
     }
     body = _post_json(
@@ -57,13 +82,13 @@ def _openai_like_generate(config: Config, machine: MachineContext, user_request:
     )
 
 
-def _anthropic_generate(config: Config, machine: MachineContext, user_request: str) -> CommandProposal:
+def _anthropic_generate(config: Config, prompt_text: str) -> CommandProposal:
     base_url = config.base_url or "https://api.anthropic.com/v1"
     payload = {
         "model": config.model,
         "max_tokens": 512,
         "system": "Return JSON only with command, reason, risk.",
-        "messages": [{"role": "user", "content": build_prompt(user_request, machine)}],
+        "messages": [{"role": "user", "content": prompt_text}],
     }
     body = _post_json(
         f"{base_url}/messages",
@@ -95,10 +120,10 @@ def _anthropic_generate(config: Config, machine: MachineContext, user_request: s
     )
 
 
-def _gemini_generate(config: Config, machine: MachineContext, user_request: str) -> CommandProposal:
+def _gemini_generate(config: Config, prompt_text: str) -> CommandProposal:
     base_url = config.base_url or "https://generativelanguage.googleapis.com/v1beta/models"
     payload = {
-        "contents": [{"parts": [{"text": build_prompt(user_request, machine)}]}],
+        "contents": [{"parts": [{"text": prompt_text}]}],
         "generationConfig": {"responseMimeType": "application/json"},
     }
     body = _post_json(
@@ -123,11 +148,11 @@ def _gemini_generate(config: Config, machine: MachineContext, user_request: str)
     )
 
 
-def _ollama_generate(config: Config, machine: MachineContext, user_request: str) -> CommandProposal:
+def _ollama_generate(config: Config, prompt_text: str) -> CommandProposal:
     base_url = config.base_url or "http://localhost:11434"
     payload = {
         "model": config.model,
-        "prompt": build_prompt(user_request, machine),
+        "prompt": prompt_text,
         "stream": False,
         "format": "json",
     }

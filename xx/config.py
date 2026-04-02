@@ -28,7 +28,6 @@ def load_config(
     print_only: bool = False,
     debug: bool = False,
     no_cache: bool = False,
-    force: bool = False,
     require_provider: bool = True,
 ) -> Config:
     path = (config_path or default_config_path()).expanduser()
@@ -42,6 +41,7 @@ def load_config(
     model = model_override or raw.get("model")
     api_key = raw.get("api_key")
     base_url = raw.get("base_url")
+    repair_attempts = int(raw.get("repair_attempts", 3))
     reporting_raw = raw.get("reporting", {})
 
     reporting = ReportingConfig(
@@ -84,10 +84,10 @@ def load_config(
         model=model or "",
         api_key=api_key,
         base_url=base_url,
+        repair_attempts=max(0, repair_attempts),
         print_only=print_only,
         debug=debug,
         cache_enabled=not no_cache,
-        force=force,
         config_path=path,
         reporting=reporting,
     )

@@ -3,7 +3,7 @@
 ## Locked Decisions
 
 - v1 allows pipelines.
-- risky commands require `--force` and still require confirmation.
+- risky commands require confirmation before execution.
 - command discovery includes only real executables on `PATH`.
 - implementation language is Python.
 - configuration uses a persisted config file only.
@@ -43,7 +43,6 @@ Reporting should be built as a first-class subsystem because token metrics and e
   - `--print-only`
   - `--debug`
   - `--no-cache`
-  - `--force`
 - Support a persisted config file only for provider and model configuration.
 - Recommended config file path:
   - `~/.config/xx/config.toml`
@@ -195,8 +194,7 @@ If a provider does not return token usage directly, the adapter should either co
   - shell chaining
 - Policy:
   - always require confirmation
-  - if risk is high and `--force` is absent, refuse execution
-  - if risk is high and `--force` is present, still require confirmation
+  - if risk is high, still require confirmation
 - Pipelines alone are allowed and should not be treated as invalid.
 
 ## Phase 9. Execution Flow
@@ -287,7 +285,6 @@ Recommended UI behavior:
 ### Integration tests
 
 - confirmation flow
-- `--force` enforcement
 - `--print-only`
 - refusal path for risky commands
 - refusal path for malformed provider responses

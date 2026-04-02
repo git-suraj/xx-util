@@ -187,7 +187,7 @@ V1 policy:
 
 - Always require confirmation.
 - Display a risk notice for high-risk commands.
-- Refuse high-risk commands unless user passes `--force`.
+- Require confirmation before executing high-risk commands.
 
 ### 3.7 Reporting and audit requirements
 
@@ -330,7 +330,6 @@ Recommended flags for v1:
 - `--print-only`
 - `--debug`
 - `--no-cache`
-- `--force`
 
 ## 5. Prompting Contract
 
@@ -462,12 +461,11 @@ Where `CommandProposal` includes:
 6. Request proposal from LLM.
 7. Validate response.
 8. Run safety analysis.
-9. If risk level is high and `--force` is not set, refuse execution.
-10. Persist the proposal and token-usage audit record.
-11. Print proposal and confirmation prompt.
-12. Execute command if approved.
-13. Update the audit record with execution outcome.
-14. Return exit code.
+9. Persist the proposal and token-usage audit record.
+10. Print proposal and confirmation prompt.
+11. Execute command if approved.
+12. Update the audit record with execution outcome.
+13. Return exit code.
 
 ### 7.4 Reporting pipeline
 
@@ -569,7 +567,7 @@ Risk: high (destructive file operation)
 Execute this command? (y/N):
 ```
 
-In v1, high-risk commands should not reach this prompt unless `--force` is present.
+In v1, high-risk commands should still require explicit confirmation.
 
 ## 10. Failure Handling
 
@@ -708,7 +706,6 @@ Recommended v1 deliverables:
 - JSON response contract from model
 - confirmation before execution
 - safety classification and warnings
-- `--force` gate for risky commands
 - `--print-only`, `--provider`, `--model`, `--debug`
 - audit logging to SQLite
 - `xx report serve`
@@ -737,7 +734,7 @@ Out of scope for v1 but worth planning for:
 If you want the fastest clean v1, I recommend:
 
 - one command only, with pipelines allowed
-- block high-risk commands unless `--force` is present
+- require confirmation for high-risk commands
 - use a config file as the primary configuration source
 - execute through the current shell with `-c`, but validate aggressively first
 - show `reason` only in `--debug`

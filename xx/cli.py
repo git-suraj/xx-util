@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from xx.config import ConfigError, default_config_path, load_config
 from xx.discovery import discover_machine_context
 from xx.executor import ExecutionError, execute_command
-from xx.providers import ProviderError, generate_command
+from xx.migrate import migrate_timestamps_to_local
+from xx.providers import ProviderError, generate_command, generate_repaired_command
 from xx.reporting import serve_report
 from xx.safety import assess_command
 from xx.storage import connect, insert_execution, prune_old_records, update_execution_outcome
@@ -24,6 +25,8 @@ def main() -> int:
         report_parser = _build_report_parser()
         args = report_parser.parse_args(report_argv)
         return _run_report_command(args)
+    if argv[:2] == ["migrate", "timestamps"]:
+        return _run_timestamp_migration(argv[2:])
     if argv[:1] == ["doctor"] and len(argv) == 1:
         return _run_doctor()
 
@@ -42,7 +45,6 @@ def main() -> int:
             print_only=args.print_only,
             debug=args.debug,
             no_cache=args.no_cache,
-            force=args.force,
         )
     except ConfigError as exc:
         print(f"Config error: {exc}", file=sys.stderr)
@@ -67,7 +69,7 @@ def main() -> int:
             _print_debug(config, machine, proposal, safety)
 
         record = ExecutionRecord(
-            invoked_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            invoked_at=_local_timestamp(),
             user_input=user_request,
             generated_command=proposal.command,
             executed=False,
@@ -83,12 +85,6 @@ def main() -> int:
         )
         record_id = insert_execution(conn, record)
 
-        if safety.level == "high" and not config.force:
-            print(f">>> {proposal.command}")
-            print("Refusing to run a high-risk command without --force.", file=sys.stderr)
-            update_execution_outcome(conn, record_id, executed=False, approved=False, exit_code=None)
-            return 1
-
         print(f">>> {proposal.command}")
         if config.print_only:
             return 0
@@ -100,13 +96,22 @@ def main() -> int:
             return 0
 
         try:
-            exit_code = execute_command(proposal.command, machine.shell)
+            result = execute_command(proposal.command, machine.shell)
         except ExecutionError as exc:
             update_execution_outcome(conn, record_id, executed=False, approved=True, exit_code=None)
             print(f"Execution error: {exc}", file=sys.stderr)
             return 1
-        update_execution_outcome(conn, record_id, executed=True, approved=True, exit_code=exit_code)
-        return exit_code
+        update_execution_outcome(conn, record_id, executed=True, approved=True, exit_code=result.exit_code)
+        if result.exit_code == 0:
+            return 0
+        return _attempt_repair(
+            conn=conn,
+            config=config,
+            machine=machine,
+            user_request=user_request,
+            previous_command=proposal.command,
+            previous_result=result,
+        )
     finally:
         conn.close()
 
@@ -140,14 +145,109 @@ def _run_doctor() -> int:
     print(f"available_commands: {len(machine.available_commands)}")
     print(f"report_database: {config.reporting.database_path}")
     print(f"report_url: http://{config.reporting.host}:{config.reporting.port}/report")
+    print(f"repair_attempts: {config.repair_attempts}")
     print(f"retention_days: {config.reporting.retention_days}")
     print(f"default_report_days: {config.reporting.default_report_days}")
     return 0
 
 
+def _run_timestamp_migration(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="xx migrate timestamps")
+    parser.add_argument("--config", default=str(default_config_path()))
+    args = parser.parse_args(argv)
+    try:
+        config = load_config(
+            config_path=Path(args.config).expanduser() if args.config else None,
+            require_provider=False,
+        )
+    except ConfigError as exc:
+        print(f"Config error: {exc}", file=sys.stderr)
+        return 2
+
+    scanned, updated = migrate_timestamps_to_local(config.reporting.database_path)
+    print(f"scanned_records: {scanned}")
+    print(f"updated_records: {updated}")
+    print(f"database: {config.reporting.database_path}")
+    return 0
+
+
+def _attempt_repair(conn, config, machine, user_request, previous_command, previous_result) -> int:
+    if config.repair_attempts <= 0:
+        return previous_result.exit_code
+
+    command = previous_command
+    result = previous_result
+    for attempt in range(1, config.repair_attempts + 1):
+        print(
+            f"Command failed with exit code {result.exit_code}. Attempting amended command {attempt}/{config.repair_attempts}...",
+            file=sys.stderr,
+        )
+        try:
+            proposal = generate_repaired_command(
+                config,
+                machine,
+                user_request,
+                command,
+                result.exit_code,
+                result.stdout,
+                result.stderr,
+            )
+        except ProviderError as exc:
+            print(f"Repair error: {exc}", file=sys.stderr)
+            return result.exit_code
+
+        safety = assess_command(proposal.command, machine)
+        if proposal.risk == "high" and safety.level != "high":
+            safety.level = "high"
+        if config.debug:
+            print(f"[debug] repaired proposal attempt={attempt}")
+            _print_debug(config, machine, proposal, safety)
+
+        record = ExecutionRecord(
+            invoked_at=_local_timestamp(),
+            user_input=user_request,
+            generated_command=proposal.command,
+            executed=False,
+            approved=False,
+            provider=proposal.provider,
+            model=proposal.model,
+            prompt_tokens=proposal.token_usage.prompt_tokens,
+            completion_tokens=proposal.token_usage.completion_tokens,
+            total_tokens=proposal.token_usage.total_tokens,
+            risk_level=safety.level,
+            exit_code=None,
+            cwd=str(machine.cwd),
+        )
+        record_id = insert_execution(conn, record)
+
+        print(f">>> {proposal.command}")
+        approved = _confirm()
+        if not approved:
+            update_execution_outcome(conn, record_id, executed=False, approved=False, exit_code=None)
+            print("Amended execution cancelled.")
+            return result.exit_code
+
+        try:
+            result = execute_command(proposal.command, machine.shell)
+        except ExecutionError as exc:
+            update_execution_outcome(conn, record_id, executed=False, approved=True, exit_code=None)
+            print(f"Execution error: {exc}", file=sys.stderr)
+            return 1
+        update_execution_outcome(conn, record_id, executed=True, approved=True, exit_code=result.exit_code)
+        if result.exit_code == 0:
+            return 0
+        command = proposal.command
+
+    return result.exit_code
+
+
 def _confirm() -> bool:
     answer = input("Execute this command? (Y/n): ").strip().lower()
     return answer in {"", "y", "yes"}
+
+
+def _local_timestamp() -> str:
+    return datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _print_debug(config, machine, proposal, safety) -> None:
@@ -172,7 +272,6 @@ def _build_main_parser() -> argparse.ArgumentParser:
     parser.add_argument("--print-only", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--no-cache", action="store_true")
-    parser.add_argument("--force", action="store_true")
     parser.add_argument("request", nargs="*")
     return parser
 
