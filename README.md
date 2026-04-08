@@ -256,6 +256,8 @@ If a repaired command later succeeds, `xx` stores that successful repair in `mem
 This is not a separate vector database. The semantic memory backend is a local JSON file with token-overlap matching, stored at `memory_path` and visible via `xx doctor`.
 If you created rows before the switch to local timestamps, run `xx migrate timestamps` once to rewrite those legacy rows into local time.
 
+The execution report groups retries into a single session row, showing the final successful command, the number of tries, and token totals summed across all attempts.
+
 ## Safety model
 
 - all commands require confirmation before execution

@@ -11,6 +11,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS execution_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   invoked_at TEXT NOT NULL,
+  execution_group_id TEXT,
+  attempt_index INTEGER,
   user_input TEXT NOT NULL,
   generated_command TEXT NOT NULL,
   executed INTEGER NOT NULL,
@@ -32,6 +34,14 @@ def connect(database_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(database_path)
     conn.row_factory = sqlite3.Row
     conn.execute(SCHEMA)
+    _ensure_column(conn, "execution_group_id", "TEXT")
+    _ensure_column(conn, "attempt_index", "INTEGER")
+    conn.execute(
+        "UPDATE execution_logs SET execution_group_id = printf('legacy-%d', id) WHERE execution_group_id IS NULL OR execution_group_id = ''"
+    )
+    conn.execute(
+        "UPDATE execution_logs SET attempt_index = 1 WHERE attempt_index IS NULL OR attempt_index < 1"
+    )
     conn.commit()
     return conn
 
@@ -48,13 +58,15 @@ def insert_execution(conn: sqlite3.Connection, record: ExecutionRecord) -> int:
     cur = conn.execute(
         """
         INSERT INTO execution_logs (
-          invoked_at, user_input, generated_command, executed, approved,
+          invoked_at, execution_group_id, attempt_index, user_input, generated_command, executed, approved,
           provider, model, prompt_tokens, completion_tokens, total_tokens,
           risk_level, exit_code, cwd
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             record.invoked_at,
+            record.execution_group_id,
+            record.attempt_index,
             record.user_input,
             record.generated_command,
             int(record.executed),
@@ -95,22 +107,10 @@ def fetch_executions(
     date_to: str | None = None,
     page: int = 1,
     page_size: int = 50,
-) -> list[sqlite3.Row]:
-    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to)
+) -> list[dict[str, Any]]:
+    sessions = _build_execution_sessions(conn, days=days, date_from=date_from, date_to=date_to)
     offset = max(0, page - 1) * page_size
-    cur = conn.execute(
-        f"""
-        SELECT invoked_at, user_input, generated_command, executed, approved,
-               provider, model, prompt_tokens, completion_tokens, total_tokens,
-               risk_level, exit_code, cwd
-        FROM execution_logs
-        {where_sql}
-        ORDER BY invoked_at DESC
-        LIMIT ? OFFSET ?
-        """,
-        (*params, page_size, offset),
-    )
-    return list(cur.fetchall())
+    return sessions[offset : offset + page_size]
 
 
 def count_executions(
@@ -120,17 +120,115 @@ def count_executions(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> int:
+    return len(_build_execution_sessions(conn, days=days, date_from=date_from, date_to=date_to))
+
+
+def _build_execution_sessions(
+    conn: sqlite3.Connection,
+    *,
+    days: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict[str, Any]]:
     where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to)
     cur = conn.execute(
         f"""
-        SELECT COUNT(*) AS total
+        SELECT id, invoked_at, execution_group_id, attempt_index, user_input, generated_command, executed, approved,
+               provider, model, prompt_tokens, completion_tokens, total_tokens,
+               risk_level, exit_code, cwd
         FROM execution_logs
         {where_sql}
+        ORDER BY invoked_at ASC, id ASC
         """,
         params,
     )
-    row = cur.fetchone()
-    return int(row["total"]) if row else 0
+    rows = list(cur.fetchall())
+    sessions: list[dict[str, Any]] = []
+    current_key: str | None = None
+    current_session: dict[str, Any] | None = None
+    for row in rows:
+        key = str(row["execution_group_id"] or f"legacy-{row['id']}")
+        if key != current_key:
+            if current_session is not None:
+                sessions.append(current_session)
+            current_session = _start_session(row, key)
+            current_key = key
+        else:
+            _append_attempt(current_session, row)
+    if current_session is not None:
+        sessions.append(current_session)
+    sessions.reverse()
+    return sessions
+
+
+def _start_session(row: sqlite3.Row, session_key: str) -> dict[str, Any]:
+    prompt_tokens = _safe_int(row["prompt_tokens"])
+    completion_tokens = _safe_int(row["completion_tokens"])
+    total_tokens = _safe_int(row["total_tokens"])
+    session = {
+        "session_key": session_key,
+        "invoked_at": row["invoked_at"],
+        "user_input": row["user_input"],
+        "generated_command": row["generated_command"],
+        "final_command": row["generated_command"],
+        "executed": int(row["executed"]),
+        "approved": int(row["approved"]),
+        "provider": row["provider"],
+        "model": row["model"],
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "risk_level": row["risk_level"],
+        "exit_code": row["exit_code"],
+        "cwd": row["cwd"],
+        "tries": 1,
+        "attempts": [
+            {
+                "attempt_index": _safe_int(row["attempt_index"]),
+                "generated_command": row["generated_command"],
+                "executed": int(row["executed"]),
+                "approved": int(row["approved"]),
+                "exit_code": row["exit_code"],
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            }
+        ],
+    }
+    session["attempts_summary"] = _attempts_summary(session["attempts"])
+    return session
+
+
+def _append_attempt(session: dict[str, Any] | None, row: sqlite3.Row) -> None:
+    if session is None:
+        return
+    prompt_tokens = _safe_int(row["prompt_tokens"])
+    completion_tokens = _safe_int(row["completion_tokens"])
+    total_tokens = _safe_int(row["total_tokens"])
+    attempt = {
+        "attempt_index": _safe_int(row["attempt_index"]),
+        "generated_command": row["generated_command"],
+        "executed": int(row["executed"]),
+        "approved": int(row["approved"]),
+        "exit_code": row["exit_code"],
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+    }
+    session["generated_command"] = row["generated_command"]
+    session["final_command"] = row["generated_command"]
+    session["executed"] = int(row["executed"])
+    session["approved"] = int(row["approved"])
+    session["provider"] = row["provider"]
+    session["model"] = row["model"]
+    session["prompt_tokens"] = int(session["prompt_tokens"]) + prompt_tokens
+    session["completion_tokens"] = int(session["completion_tokens"]) + completion_tokens
+    session["total_tokens"] = int(session["total_tokens"]) + total_tokens
+    session["risk_level"] = row["risk_level"]
+    session["exit_code"] = row["exit_code"]
+    session["tries"] = int(session["tries"]) + 1
+    session["attempts"].append(attempt)
+    session["attempts_summary"] = _attempts_summary(session["attempts"])
 
 
 def fetch_token_summary_by_model(
@@ -181,6 +279,39 @@ def fetch_token_summary_by_provider(
         params,
     )
     return list(cur.fetchall())
+
+
+def _attempts_summary(attempts: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for position, attempt in enumerate(attempts, start=1):
+        attempt_index = _safe_int(attempt.get("attempt_index")) or position
+        executed = _safe_int(attempt.get("executed"))
+        approved = _safe_int(attempt.get("approved"))
+        exit_code = attempt.get("exit_code")
+        if executed and exit_code == 0:
+            status = "succeeded"
+        elif executed:
+            status = f"failed (exit {exit_code})"
+        elif approved:
+            status = "failed"
+        else:
+            status = "cancelled"
+        parts.append(f"{attempt_index} {status}")
+    return " · ".join(parts)
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _ensure_column(conn: sqlite3.Connection, column: str, declaration: str) -> None:
+    cur = conn.execute("PRAGMA table_info(execution_logs)")
+    columns = {str(row["name"]) for row in cur.fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE execution_logs ADD COLUMN {column} {declaration}")
 
 
 def _build_filters(

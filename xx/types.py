@@ -65,6 +65,8 @@ class SafetyAssessment:
 @dataclass(slots=True)
 class ExecutionRecord:
     invoked_at: str
+    execution_group_id: str
+    attempt_index: int
     user_input: str
     generated_command: str
     executed: bool

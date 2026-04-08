@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -62,6 +63,7 @@ def main() -> int:
         except ProviderError as exc:
             print(f"Provider error: {exc}", file=sys.stderr)
             return 1
+        execution_group_id = uuid.uuid4().hex
 
         safety = assess_command(proposal.command, machine)
         if proposal.risk == "high" and safety.level != "high":
@@ -71,6 +73,8 @@ def main() -> int:
 
         record = ExecutionRecord(
             invoked_at=_local_timestamp(),
+            execution_group_id=execution_group_id,
+            attempt_index=1,
             user_input=user_request,
             generated_command=proposal.command,
             executed=False,
@@ -112,6 +116,8 @@ def main() -> int:
             user_request=user_request,
             previous_command=proposal.command,
             previous_result=result,
+            execution_group_id=execution_group_id,
+            next_attempt_index=2,
         )
     finally:
         conn.close()
@@ -176,7 +182,17 @@ def _run_timestamp_migration(argv: list[str]) -> int:
     return 0
 
 
-def _attempt_repair(conn, config, machine, user_request, previous_command, previous_result) -> int:
+def _attempt_repair(
+    conn,
+    config,
+    machine,
+    user_request,
+    previous_command,
+    previous_result,
+    *,
+    execution_group_id: str,
+    next_attempt_index: int,
+) -> int:
     if config.repair_attempts <= 0:
         return previous_result.exit_code
 
@@ -215,6 +231,8 @@ def _attempt_repair(conn, config, machine, user_request, previous_command, previ
 
         record = ExecutionRecord(
             invoked_at=_local_timestamp(),
+            execution_group_id=execution_group_id,
+            attempt_index=next_attempt_index,
             user_input=user_request,
             generated_command=proposal.command,
             executed=False,
@@ -257,6 +275,7 @@ def _attempt_repair(conn, config, machine, user_request, previous_command, previ
             )
             return 0
         command = proposal.command
+        next_attempt_index += 1
 
     return result.exit_code
 

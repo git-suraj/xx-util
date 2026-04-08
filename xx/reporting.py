@@ -77,7 +77,7 @@ def _make_handler(config: ReportingConfig):
                     )
                     pagination = _pagination_payload(total, filters["page"], filters["page_size"])
                     rows = [
-                        dict(row)
+                        row
                         for row in fetch_executions(
                             conn,
                             days=filters["days"],
@@ -196,7 +196,11 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
             "<tr>"
             f"<td>{html.escape(str(row['invoked_at']))}</td>"
             f"<td>{html.escape(str(row['user_input']))}</td>"
-            f"<td><code>{html.escape(str(row['generated_command']))}</code></td>"
+            "<td>"
+            f"<code>{html.escape(str(row['final_command']))}</code>"
+            f"<div class=\"attempts-summary\">{html.escape(str(row['attempts_summary']))}</div>"
+            "</td>"
+            f"<td>{html.escape(str(row['tries']))}</td>"
             f"<td>{'yes' if row['executed'] else 'no'}</td>"
             f"<td>{html.escape(str(row['provider']))}</td>"
             f"<td>{html.escape(str(row['model']))}</td>"
@@ -286,8 +290,12 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       margin-top: 18px;
       box-shadow: 0 8px 30px rgba(31, 42, 48, 0.06);
     }}
+    .table-scroll {{
+      overflow-x: auto;
+    }}
     table {{
       width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       font-size: 14px;
     }}
@@ -377,12 +385,44 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       padding: 10px 8px;
       text-align: left;
       vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }}
     th {{ color: var(--accent); }}
     code {{
       font-family: "SFMono-Regular", Menlo, monospace;
       white-space: pre-wrap;
-      word-break: break-word;
+      overflow-wrap: anywhere;
+    }}
+    .attempts-summary {{
+      margin-top: 6px;
+      font-size: 12px;
+      color: #6a5b49;
+      line-height: 1.35;
+    }}
+    .col-when {{
+      width: 10%;
+    }}
+    .col-user-input {{
+      width: 28%;
+    }}
+    .col-command {{
+      width: 25%;
+    }}
+    .col-tries {{
+      width: 6%;
+    }}
+    .col-executed {{
+      width: 8%;
+    }}
+    .col-provider {{
+      width: 8%;
+    }}
+    .col-model {{
+      width: 8%;
+    }}
+    .col-total-tokens {{
+      width: 7%;
     }}
   </style>
 </head>
@@ -411,12 +451,14 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
     </section>
     <section>
       <h2>Executions</h2>
+      <div class="table-scroll">
       <table>
         <thead>
-          <tr><th>When</th><th>User input</th><th>Command</th><th>Executed</th><th>Provider</th><th>Model</th><th>Total tokens</th></tr>
+          <tr><th class="col-when">When</th><th class="col-user-input">User input</th><th class="col-command">Final command</th><th class="col-tries">Tries</th><th class="col-executed">Executed</th><th class="col-provider">Provider</th><th class="col-model">Model</th><th class="col-total-tokens">Total tokens</th></tr>
         </thead>
         <tbody>{execution_rows}</tbody>
       </table>
+      </div>
       <div class="table-controls">
         <form class="page-size-form" method="get" action="/report">
           <div class="field">
@@ -437,21 +479,25 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
     </section>
     <section>
       <h2>Tokens by model</h2>
+      <div class="table-scroll">
       <table>
         <thead>
           <tr><th>Provider</th><th>Model</th><th>Invocations</th><th>Total tokens</th></tr>
         </thead>
         <tbody>{by_model_rows}</tbody>
       </table>
+      </div>
     </section>
     <section>
       <h2>Tokens by provider</h2>
+      <div class="table-scroll">
       <table>
         <thead>
           <tr><th>Provider</th><th>Invocations</th><th>Total tokens</th></tr>
         </thead>
         <tbody>{by_provider_rows}</tbody>
       </table>
+      </div>
     </section>
   </main>
 </body>
