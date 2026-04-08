@@ -42,6 +42,7 @@ def load_config(
     api_key = raw.get("api_key")
     base_url = raw.get("base_url")
     repair_attempts = int(raw.get("repair_attempts", 3))
+    memory_path = Path(raw.get("memory_path", "~/.local/share/xx/repair-memory.json")).expanduser()
     reporting_raw = raw.get("reporting", {})
 
     reporting = ReportingConfig(
@@ -85,6 +86,7 @@ def load_config(
         api_key=api_key,
         base_url=base_url,
         repair_attempts=max(0, repair_attempts),
+        memory_path=memory_path,
         print_only=print_only,
         debug=debug,
         cache_enabled=not no_cache,

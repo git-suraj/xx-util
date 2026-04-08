@@ -20,6 +20,7 @@ class Config:
     api_key: str | None = None
     base_url: str | None = None
     repair_attempts: int = 3
+    memory_path: Path = Path("~/.local/share/xx/repair-memory.json").expanduser()
     print_only: bool = False
     debug: bool = False
     cache_enabled: bool = True

@@ -12,8 +12,13 @@ class ProviderError(RuntimeError):
     """Raised when provider interaction fails."""
 
 
-def generate_command(config: Config, machine: MachineContext, user_request: str) -> CommandProposal:
-    prompt_text = build_prompt(user_request, machine)
+def generate_command(
+    config: Config,
+    machine: MachineContext,
+    user_request: str,
+    prior_successful_command: dict | None = None,
+) -> CommandProposal:
+    prompt_text = build_prompt(user_request, machine, prior_successful_command)
     return _generate_from_prompt(config, prompt_text)
 
 
@@ -25,6 +30,7 @@ def generate_repaired_command(
     exit_code: int,
     stdout: str,
     stderr: str,
+    prior_successful_command: dict | None = None,
 ) -> CommandProposal:
     prompt_text = build_repair_prompt(
         user_request,
@@ -33,6 +39,7 @@ def generate_repaired_command(
         exit_code,
         stdout,
         stderr,
+        prior_successful_command,
     )
     return _generate_from_prompt(config, prompt_text)
 

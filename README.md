@@ -252,6 +252,8 @@ Every invocation writes an audit row after a provider response is received. The 
 
 Rows older than `retention_days` are pruned automatically. The report window defaults to `default_report_days`.
 If a command fails, `xx` can ask the model for an amended command up to `repair_attempts` times. The default is `3`.
+If a repaired command later succeeds, `xx` stores that successful repair in `memory_path`. On future similar requests, `xx` finds the closest remembered successful command with a lightweight semantic token match and passes it to the model as prior-successful-command context so the model can reuse it unchanged or adapt it minimally for the new request.
+This is not a separate vector database. The semantic memory backend is a local JSON file with token-overlap matching, stored at `memory_path` and visible via `xx doctor`.
 If you created rows before the switch to local timestamps, run `xx migrate timestamps` once to rewrite those legacy rows into local time.
 
 ## Safety model

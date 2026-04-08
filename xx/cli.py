@@ -8,6 +8,7 @@ from pathlib import Path
 from xx.config import ConfigError, default_config_path, load_config
 from xx.discovery import discover_machine_context
 from xx.executor import ExecutionError, execute_command
+from xx.memory import describe_memory, lookup_repaired_command, remember_successful_repair
 from xx.migrate import migrate_timestamps_to_local
 from xx.providers import ProviderError, generate_command, generate_repaired_command
 from xx.reporting import serve_report
@@ -57,7 +58,7 @@ def main() -> int:
         user_request = " ".join(args.request).strip()
 
         try:
-            proposal = generate_command(config, machine, user_request)
+            proposal = _generate_proposal(config, machine, user_request)
         except ProviderError as exc:
             print(f"Provider error: {exc}", file=sys.stderr)
             return 1
@@ -137,6 +138,7 @@ def _run_doctor() -> int:
         return 2
 
     machine = discover_machine_context(cache_enabled=config.cache_enabled)
+    memory = describe_memory(config.memory_path)
     print(f"config_path: {config.config_path}")
     print(f"provider: {config.provider or '(not set)'}")
     print(f"model: {config.model or '(not set)'}")
@@ -144,6 +146,9 @@ def _run_doctor() -> int:
     print(f"cwd: {machine.cwd}")
     print(f"available_commands: {len(machine.available_commands)}")
     print(f"report_database: {config.reporting.database_path}")
+    print(f"semantic_memory_backend: {memory['backend']}")
+    print(f"semantic_memory_path: {memory['path']}")
+    print(f"semantic_memory_entries: {memory['entries']}")
     print(f"report_url: http://{config.reporting.host}:{config.reporting.port}/report")
     print(f"repair_attempts: {config.repair_attempts}")
     print(f"retention_days: {config.reporting.retention_days}")
@@ -175,6 +180,10 @@ def _attempt_repair(conn, config, machine, user_request, previous_command, previ
     if config.repair_attempts <= 0:
         return previous_result.exit_code
 
+    remembered_command = lookup_repaired_command(
+        config.memory_path,
+        user_request=user_request,
+    )
     command = previous_command
     result = previous_result
     for attempt in range(1, config.repair_attempts + 1):
@@ -191,6 +200,7 @@ def _attempt_repair(conn, config, machine, user_request, previous_command, previ
                 result.exit_code,
                 result.stdout,
                 result.stderr,
+                remembered_command,
             )
         except ProviderError as exc:
             print(f"Repair error: {exc}", file=sys.stderr)
@@ -235,10 +245,28 @@ def _attempt_repair(conn, config, machine, user_request, previous_command, previ
             return 1
         update_execution_outcome(conn, record_id, executed=True, approved=True, exit_code=result.exit_code)
         if result.exit_code == 0:
+            remember_successful_repair(
+                config.memory_path,
+                user_request=user_request,
+                failed_command=command,
+                successful_command=proposal.command,
+            )
+            print(
+                f"Saved successful repair to semantic memory: {config.memory_path}",
+                file=sys.stderr,
+            )
             return 0
         command = proposal.command
 
     return result.exit_code
+
+
+def _generate_proposal(config, machine, user_request):
+    prior_successful_command = lookup_repaired_command(
+        config.memory_path,
+        user_request=user_request,
+    )
+    return generate_command(config, machine, user_request, prior_successful_command)
 
 
 def _confirm() -> bool:
