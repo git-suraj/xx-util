@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 
+from xx.colors import ColorConfig, colorize, should_use_color
 from xx.types import CommandExecutionResult
 
 
@@ -13,15 +14,19 @@ class ExecutionError(RuntimeError):
     """Raised when command execution cannot be started."""
 
 
-def execute_command(command: str, shell: str) -> CommandExecutionResult:
+def execute_command(
+    command: str,
+    shell: str,
+    colors: ColorConfig | None = None,
+) -> CommandExecutionResult:
     resolved_shell = _resolve_shell(shell)
     try:
-        completed = _run_command(command, resolved_shell)
+        completed = _run_command(command, resolved_shell, colors)
     except OSError as exc:
         fallback_shell = "/bin/sh"
         if resolved_shell != fallback_shell:
             try:
-                completed = _run_command(command, fallback_shell)
+                completed = _run_command(command, fallback_shell, colors)
             except OSError as fallback_exc:
                 raise ExecutionError(
                     f"Unable to execute command via {resolved_shell} or {fallback_shell}: {fallback_exc}"
@@ -47,8 +52,14 @@ def _resolve_shell(shell: str) -> str:
     return "/bin/sh"
 
 
-def _run_command(command: str, shell: str) -> CommandExecutionResult:
+def _run_command(
+    command: str,
+    shell: str,
+    colors: ColorConfig | None = None,
+) -> CommandExecutionResult:
     wrapped_command = _wrap_with_pipefail(command, shell)
+    colors = colors or ColorConfig()
+    use_color = should_use_color(colors.enabled)
     process = subprocess.Popen(
         wrapped_command,
         shell=True,
@@ -64,7 +75,10 @@ def _run_command(command: str, shell: str) -> CommandExecutionResult:
     def reader(stream, sink, collector) -> None:
         try:
             for chunk in iter(stream.readline, ""):
-                sink.write(chunk)
+                if sink is sys.stdout and use_color:
+                    sink.write(colorize(chunk, colors.output, enabled=colors.enabled))
+                else:
+                    sink.write(chunk)
                 sink.flush()
                 collector.append(chunk)
         finally:

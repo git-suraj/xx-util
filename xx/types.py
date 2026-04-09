@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from xx.colors import ColorConfig
+
 
 @dataclass(slots=True)
 class ReportingConfig:
@@ -21,6 +23,7 @@ class Config:
     base_url: str | None = None
     repair_attempts: int = 3
     memory_path: Path = Path("~/.local/share/xx/repair-memory.json").expanduser()
+    colors: ColorConfig = field(default_factory=ColorConfig)
     print_only: bool = False
     debug: bool = False
     cache_enabled: bool = True

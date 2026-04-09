@@ -4,6 +4,7 @@ import os
 import tomllib
 from pathlib import Path
 
+from xx.colors import ColorConfig
 from xx.types import Config, ReportingConfig
 
 
@@ -43,7 +44,12 @@ def load_config(
     base_url = raw.get("base_url")
     repair_attempts = int(raw.get("repair_attempts", 3))
     memory_path = Path(raw.get("memory_path", "~/.local/share/xx/repair-memory.json")).expanduser()
+    colors_raw = raw.get("colors", {})
+    if not isinstance(colors_raw, dict):
+        raise ConfigError("Config field [colors] must be a table")
     reporting_raw = raw.get("reporting", {})
+    if not isinstance(reporting_raw, dict):
+        raise ConfigError("Config field [reporting] must be a table")
 
     reporting = ReportingConfig(
         host=reporting_raw.get("host", "127.0.0.1"),
@@ -53,6 +59,11 @@ def load_config(
         ).expanduser(),
         retention_days=int(reporting_raw.get("retention_days", 90)),
         default_report_days=int(reporting_raw.get("default_report_days", 90)),
+    )
+    colors = ColorConfig(
+        enabled=_read_bool(colors_raw.get("enabled", True)),
+        preview=str(colors_raw.get("preview", "green")).strip().lower(),
+        output=str(colors_raw.get("output", "yellow")).strip().lower(),
     )
 
     normalized = ""
@@ -87,9 +98,22 @@ def load_config(
         base_url=base_url,
         repair_attempts=max(0, repair_attempts),
         memory_path=memory_path,
+        colors=colors,
         print_only=print_only,
         debug=debug,
         cache_enabled=not no_cache,
         config_path=path,
         reporting=reporting,
     )
+
+
+def _read_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return bool(value)

@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from xx.config import ConfigError, default_config_path, load_config
+from xx.colors import ColorConfig, colorize
 from xx.discovery import discover_machine_context
 from xx.executor import ExecutionError, execute_command
 from xx.memory import describe_memory, lookup_repaired_command, remember_successful_repair
@@ -90,7 +91,7 @@ def main() -> int:
         )
         record_id = insert_execution(conn, record)
 
-        print(f">>> {proposal.command}")
+        print(_format_command_preview(proposal.command, config.colors))
         if config.print_only:
             return 0
 
@@ -101,7 +102,7 @@ def main() -> int:
             return 0
 
         try:
-            result = execute_command(proposal.command, machine.shell)
+            result = execute_command(proposal.command, machine.shell, config.colors)
         except ExecutionError as exc:
             update_execution_outcome(conn, record_id, executed=False, approved=True, exit_code=None)
             print(f"Execution error: {exc}", file=sys.stderr)
@@ -152,6 +153,9 @@ def _run_doctor() -> int:
     print(f"cwd: {machine.cwd}")
     print(f"available_commands: {len(machine.available_commands)}")
     print(f"report_database: {config.reporting.database_path}")
+    print(f"colors_enabled: {config.colors.enabled}")
+    print(f"colors_preview: {config.colors.preview}")
+    print(f"colors_output: {config.colors.output}")
     print(f"semantic_memory_backend: {memory['backend']}")
     print(f"semantic_memory_path: {memory['path']}")
     print(f"semantic_memory_entries: {memory['entries']}")
@@ -248,7 +252,7 @@ def _attempt_repair(
         )
         record_id = insert_execution(conn, record)
 
-        print(f">>> {proposal.command}")
+        print(_format_command_preview(proposal.command, config.colors))
         approved = _confirm()
         if not approved:
             update_execution_outcome(conn, record_id, executed=False, approved=False, exit_code=None)
@@ -256,7 +260,7 @@ def _attempt_repair(
             return result.exit_code
 
         try:
-            result = execute_command(proposal.command, machine.shell)
+            result = execute_command(proposal.command, machine.shell, config.colors)
         except ExecutionError as exc:
             update_execution_outcome(conn, record_id, executed=False, approved=True, exit_code=None)
             print(f"Execution error: {exc}", file=sys.stderr)
@@ -309,6 +313,10 @@ def _print_debug(config, machine, proposal, safety) -> None:
     print(f"[debug] risk={safety.level} flags={', '.join(safety.flags) if safety.flags else 'none'}")
     if proposal.reason:
         print(f"[debug] reason={proposal.reason}")
+
+
+def _format_command_preview(command: str, colors: ColorConfig) -> str:
+    return colorize(f">>> {command}", colors.preview, enabled=colors.enabled)
 
 
 def _build_main_parser() -> argparse.ArgumentParser:

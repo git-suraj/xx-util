@@ -67,6 +67,11 @@ api_key = "your-api-key"
 repair_attempts = 3
 # base_url = "https://api.openai.com/v1"
 
+[colors]
+enabled = true
+preview = "green"
+output = "yellow"
+
 [reporting]
 host = "127.0.0.1"
 port = 10000
@@ -96,6 +101,8 @@ Expected top-level config fields:
   Optional for `openai`, `openai_compatible`, `anthropic`, `mistral`, and `ollama`.
 - `repair_attempts`
   Optional. Number of auto-repair attempts after a failed command. Defaults to `3`.
+- `colors`
+  Optional. Controls terminal colors for the preview line and command output. `enabled` defaults to `true`, `preview` defaults to `green`, and `output` defaults to `yellow`.
 
 Provider-specific examples:
 
