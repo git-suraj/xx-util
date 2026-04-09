@@ -48,8 +48,9 @@ def _resolve_shell(shell: str) -> str:
 
 
 def _run_command(command: str, shell: str) -> CommandExecutionResult:
+    wrapped_command = _wrap_with_pipefail(command, shell)
     process = subprocess.Popen(
-        command,
+        wrapped_command,
         shell=True,
         executable=shell,
         stdout=subprocess.PIPE,
@@ -85,3 +86,13 @@ def _run_command(command: str, shell: str) -> CommandExecutionResult:
         stdout="".join(stdout_chunks),
         stderr="".join(stderr_chunks),
     )
+
+
+def _wrap_with_pipefail(command: str, shell: str) -> str:
+    if "|" not in command:
+        return command
+
+    shell_name = os.path.basename(shell or "")
+    if shell_name in {"bash", "zsh"}:
+        return f"set -o pipefail; {command}"
+    return command

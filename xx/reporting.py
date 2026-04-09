@@ -196,6 +196,7 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
             "<tr>"
             f"<td>{html.escape(str(row['invoked_at']))}</td>"
             f"<td>{html.escape(str(row['user_input']))}</td>"
+            f"<td>{html.escape(str(row['cwd']))}</td>"
             "<td>"
             f"<code>{html.escape(str(row['final_command']))}</code>"
             f"<div class=\"attempts-summary\">{html.escape(str(row['attempts_summary']))}</div>"
@@ -404,22 +405,25 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       width: 10%;
     }}
     .col-user-input {{
-      width: 28%;
+      width: 22%;
+    }}
+    .col-cwd {{
+      width: 14%;
     }}
     .col-command {{
-      width: 25%;
+      width: 22%;
     }}
     .col-tries {{
-      width: 6%;
+      width: 5%;
     }}
     .col-executed {{
-      width: 8%;
+      width: 7%;
     }}
     .col-provider {{
-      width: 8%;
+      width: 7%;
     }}
     .col-model {{
-      width: 8%;
+      width: 7%;
     }}
     .col-total-tokens {{
       width: 7%;
@@ -454,7 +458,7 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       <div class="table-scroll">
       <table>
         <thead>
-          <tr><th class="col-when">When</th><th class="col-user-input">User input</th><th class="col-command">Final command</th><th class="col-tries">Tries</th><th class="col-executed">Executed</th><th class="col-provider">Provider</th><th class="col-model">Model</th><th class="col-total-tokens">Total tokens</th></tr>
+          <tr><th class="col-when">When</th><th class="col-user-input">User input</th><th class="col-cwd">cwd</th><th class="col-command">Final command</th><th class="col-tries">Tries</th><th class="col-executed">Executed</th><th class="col-provider">Provider</th><th class="col-model">Model</th><th class="col-total-tokens">Total tokens</th></tr>
         </thead>
         <tbody>{execution_rows}</tbody>
       </table>
