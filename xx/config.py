@@ -5,7 +5,7 @@ import tomllib
 from pathlib import Path
 
 from xx.colors import ColorConfig
-from xx.types import Config, ReportingConfig
+from xx.types import ChatConfig, Config, ReportingConfig
 
 
 class ConfigError(RuntimeError):
@@ -50,6 +50,9 @@ def load_config(
     reporting_raw = raw.get("reporting", {})
     if not isinstance(reporting_raw, dict):
         raise ConfigError("Config field [reporting] must be a table")
+    chat_raw = raw.get("chat", {})
+    if not isinstance(chat_raw, dict):
+        raise ConfigError("Config field [chat] must be a table")
 
     reporting = ReportingConfig(
         host=reporting_raw.get("host", "127.0.0.1"),
@@ -64,6 +67,13 @@ def load_config(
         enabled=_read_bool(colors_raw.get("enabled", True)),
         preview=str(colors_raw.get("preview", "green")).strip().lower(),
         output=str(colors_raw.get("output", "yellow")).strip().lower(),
+        chat_prompt=str(colors_raw.get("chat_prompt", "cyan")).strip().lower(),
+        error=str(colors_raw.get("error", "red")).strip().lower(),
+        system=str(colors_raw.get("system", "bright_black")).strip().lower(),
+    )
+    chat = ChatConfig(
+        include_command_output=_read_bool(chat_raw.get("include_command_output", False)),
+        max_output_context_chars=max(0, int(chat_raw.get("max_output_context_chars", 12000))),
     )
 
     normalized = ""
@@ -104,6 +114,7 @@ def load_config(
         cache_enabled=not no_cache,
         config_path=path,
         reporting=reporting,
+        chat=chat,
     )
 
 

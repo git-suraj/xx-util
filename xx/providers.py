@@ -4,8 +4,8 @@ import json
 import urllib.error
 import urllib.request
 
-from xx.prompt import build_prompt, build_repair_prompt
-from xx.types import CommandProposal, Config, MachineContext, TokenUsage
+from xx.prompt import build_chat_prompt, build_prompt, build_repair_prompt
+from xx.types import ChatTurn, CommandProposal, Config, MachineContext, TokenUsage
 
 
 class ProviderError(RuntimeError):
@@ -40,6 +40,24 @@ def generate_repaired_command(
         stdout,
         stderr,
         prior_successful_command,
+    )
+    return _generate_from_prompt(config, prompt_text)
+
+
+def generate_chat_command(
+    config: Config,
+    machine: MachineContext,
+    user_message: str,
+    turns: list[ChatTurn],
+    *,
+    include_command_output: bool,
+) -> CommandProposal:
+    prompt_text = build_chat_prompt(
+        user_message,
+        machine,
+        turns,
+        include_command_output=include_command_output,
+        max_output_context_chars=config.chat.max_output_context_chars,
     )
     return _generate_from_prompt(config, prompt_text)
 

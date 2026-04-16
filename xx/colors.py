@@ -30,6 +30,9 @@ class ColorConfig:
     enabled: bool = True
     preview: str = "green"
     output: str = "yellow"
+    chat_prompt: str = "cyan"
+    error: str = "red"
+    system: str = "bright_black"
 
 
 def should_use_color(enabled: bool) -> bool:

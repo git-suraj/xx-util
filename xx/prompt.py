@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from xx.types import MachineContext
+from xx.types import ChatTurn, MachineContext
 
 
 def _shared_rules() -> list[str]:
@@ -84,3 +84,73 @@ def build_repair_prompt(
         },
     }
     return json.dumps(payload, indent=2)
+
+
+def build_chat_prompt(
+    user_message: str,
+    machine: MachineContext,
+    turns: list[ChatTurn],
+    *,
+    include_command_output: bool,
+    max_output_context_chars: int,
+) -> str:
+    payload = {
+        "mode": "chat",
+        "current_user_message": user_message,
+        "os": machine.os_name,
+        "shell": machine.shell,
+        "cwd": str(machine.cwd),
+        "available_commands": machine.available_commands,
+        "previous_turns": [
+            _chat_turn_payload(
+                turn,
+                include_command_output=include_command_output,
+                max_output_context_chars=max_output_context_chars,
+            )
+            for turn in turns
+        ],
+        "rules": [
+            "Return exactly one shell command for the current user message.",
+            "Use previous turns as conversational context for refinement.",
+            "If command output is not included, do not claim to have read exact previous output values.",
+            "When the user asks to refine a previous result, generate a command that reproduces the refined result from the filesystem or environment.",
+            "Pipelines are allowed when useful.",
+            *_shared_rules(),
+        ],
+        "response_schema": {
+            "command": "string",
+            "reason": "string",
+            "risk": "low|medium|high",
+        },
+    }
+    return json.dumps(payload, indent=2)
+
+
+def _chat_turn_payload(
+    turn: ChatTurn,
+    *,
+    include_command_output: bool,
+    max_output_context_chars: int,
+) -> dict:
+    payload = {
+        "user_message": turn.user_message,
+        "command": turn.command,
+        "approved": turn.approved,
+        "executed": turn.executed,
+        "risk_level": turn.risk_level,
+        "exit_code": turn.exit_code,
+        "stdout_included": False,
+        "stderr_included": False,
+    }
+    if include_command_output:
+        payload["stdout_tail"] = _tail(turn.stdout, max_output_context_chars)
+        payload["stderr_tail"] = _tail(turn.stderr, max_output_context_chars)
+        payload["stdout_included"] = bool(payload["stdout_tail"])
+        payload["stderr_included"] = bool(payload["stderr_tail"])
+    return payload
+
+
+def _tail(value: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    return value[-max_chars:]

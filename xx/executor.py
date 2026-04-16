@@ -60,6 +60,7 @@ def _run_command(
     wrapped_command = _wrap_with_pipefail(command, shell)
     colors = colors or ColorConfig()
     use_color = should_use_color(colors.enabled)
+    _print_output_header(colors, use_color)
     process = subprocess.Popen(
         wrapped_command,
         shell=True,
@@ -100,6 +101,14 @@ def _run_command(
         stdout="".join(stdout_chunks),
         stderr="".join(stderr_chunks),
     )
+
+
+def _print_output_header(colors: ColorConfig, use_color: bool) -> None:
+    header = "out >\n"
+    if use_color:
+        header = colorize(header, colors.system, enabled=colors.enabled)
+    sys.stdout.write(header)
+    sys.stdout.flush()
 
 
 def _wrap_with_pipefail(command: str, shell: str) -> str:

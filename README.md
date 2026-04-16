@@ -15,6 +15,8 @@
 - pipeline support
 - high-risk command confirmation
 - confirmation before execution
+- interactive chat mode for iterative command refinement
+- terminal spinner while command generation is in progress
 - SQLite-backed audit log
 - reporting server with:
   - execution history
@@ -71,6 +73,9 @@ repair_attempts = 3
 enabled = true
 preview = "green"
 output = "yellow"
+chat_prompt = "cyan"
+error = "red"
+system = "bright_black"
 
 [reporting]
 host = "127.0.0.1"
@@ -78,6 +83,10 @@ port = 10000
 database_path = "~/.local/share/xx/xx.db"
 retention_days = 90
 default_report_days = 90
+
+[chat]
+include_command_output = false
+max_output_context_chars = 12000
 ```
 
 Accepted `provider` values:
@@ -102,7 +111,9 @@ Expected top-level config fields:
 - `repair_attempts`
   Optional. Number of auto-repair attempts after a failed command. Defaults to `3`.
 - `colors`
-  Optional. Controls terminal colors for the preview line and command output. `enabled` defaults to `true`, `preview` defaults to `green`, and `output` defaults to `yellow`.
+  Optional. Controls terminal colors for the preview line, command output, chat input prompt, error messages, and muted system text. `enabled` defaults to `true`, `preview` defaults to `green`, `output` defaults to `yellow`, `chat_prompt` defaults to `cyan`, `error` defaults to `red`, and `system` defaults to `bright_black`.
+- `chat`
+  Optional. Controls chat-mode context. `include_command_output` defaults to `false`, so command stdout/stderr is not sent to the model unless explicitly enabled. `max_output_context_chars` defaults to `12000`.
 
 Provider-specific examples:
 
@@ -192,6 +203,29 @@ Override provider or model:
 
 ```bash
 xx --provider ollama --model llama3.1 "find json files larger than 1 MB"
+```
+
+Start an interactive refinement session:
+
+```bash
+xx chat
+```
+
+Chat mode keeps previous user messages, generated commands, approvals, and exit codes as context so follow-up requests can refine earlier commands. By default, command output is not sent to the model. To opt in for a single session:
+
+```bash
+xx chat --include-output
+```
+
+Inside chat mode:
+
+```text
+/
+/history
+/clear
+/include-output on
+/include-output off
+/exit
 ```
 
 Start the report server:

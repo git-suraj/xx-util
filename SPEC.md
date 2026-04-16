@@ -61,7 +61,33 @@ Behavior:
 3. Serve an HTML report plus JSON APIs.
 4. Default to the configured reporting window, which is 90 days unless overridden in config.
 
-### 2.3 Confirmation flow
+### 2.3 Chat command
+
+```bash
+xx chat
+```
+
+Behavior:
+
+1. Start an interactive prompt.
+2. Keep previous user messages, generated commands, approvals, and exit codes as session context.
+3. Generate one proposed shell command for each user message.
+4. Show the command and require confirmation before execution.
+5. Stream command output to stdout/stderr when executed.
+6. Continue accepting follow-up requests until `/exit`, `/quit`, EOF, or Ctrl-C.
+
+Command output must not be sent to the LLM by default. Users may opt in with config or a per-session flag. When enabled, stdout/stderr included in prompts must be truncated to the configured maximum.
+
+Supported chat meta commands:
+
+- `/`
+- `/history`
+- `/clear`
+- `/include-output on`
+- `/include-output off`
+- `/exit`
+
+### 2.4 Confirmation flow
 
 Default prompt:
 
@@ -77,7 +103,7 @@ Rules:
 - `N` or `n` means no.
 - On no, `xx` exits without executing anything.
 
-### 2.4 Error cases
+### 2.5 Error cases
 
 - If the model cannot produce a safe command, `xx` prints an explanation and exits non-zero.
 - If provider credentials are missing, `xx` prints the missing config fields and exits non-zero.
@@ -311,6 +337,18 @@ port = 10000
 database_path = "~/.local/share/xx/xx.db"
 retention_days = 90
 default_report_days = 90
+
+[chat]
+include_command_output = false
+max_output_context_chars = 12000
+
+[colors]
+enabled = true
+preview = "green"
+output = "yellow"
+chat_prompt = "cyan"
+error = "red"
+system = "bright_black"
 ```
 
 ### 4.3 Proposed CLI flags
@@ -320,6 +358,8 @@ xx "list files"
 xx --provider ollama --model llama3.1 "find large files"
 xx --print-only "show me all git branches"
 xx --no-cache "search for duplicate files"
+xx chat
+xx chat --include-output
 xx report serve
 ```
 
@@ -330,6 +370,11 @@ Recommended flags for v1:
 - `--print-only`
 - `--debug`
 - `--no-cache`
+
+Recommended chat flags:
+
+- `--include-output`
+- `--no-include-output`
 
 ## 5. Prompting Contract
 

@@ -16,6 +16,12 @@ class ReportingConfig:
 
 
 @dataclass(slots=True)
+class ChatConfig:
+    include_command_output: bool = False
+    max_output_context_chars: int = 12000
+
+
+@dataclass(slots=True)
 class Config:
     provider: str
     model: str
@@ -29,6 +35,7 @@ class Config:
     cache_enabled: bool = True
     config_path: Path | None = None
     reporting: ReportingConfig = field(default_factory=ReportingConfig)
+    chat: ChatConfig = field(default_factory=ChatConfig)
 
 
 @dataclass(slots=True)
@@ -89,3 +96,15 @@ class CommandExecutionResult:
     exit_code: int
     stdout: str
     stderr: str
+
+
+@dataclass(slots=True)
+class ChatTurn:
+    user_message: str
+    command: str
+    approved: bool
+    executed: bool
+    risk_level: str
+    exit_code: int | None = None
+    stdout: str = ""
+    stderr: str = ""
