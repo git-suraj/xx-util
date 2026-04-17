@@ -208,6 +208,12 @@ xx --provider ollama --model llama3.1 "find json files larger than 1 MB"
 Start an interactive refinement session:
 
 ```bash
+xx
+```
+
+or explicitly:
+
+```bash
 xx chat
 ```
 

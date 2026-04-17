@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS execution_logs (
   invoked_at TEXT NOT NULL,
   execution_group_id TEXT,
   attempt_index INTEGER,
+  execution_type TEXT NOT NULL DEFAULT 'standalone',
   user_input TEXT NOT NULL,
   generated_command TEXT NOT NULL,
   executed INTEGER NOT NULL,
@@ -36,11 +37,15 @@ def connect(database_path: Path) -> sqlite3.Connection:
     conn.execute(SCHEMA)
     _ensure_column(conn, "execution_group_id", "TEXT")
     _ensure_column(conn, "attempt_index", "INTEGER")
+    _ensure_column(conn, "execution_type", "TEXT NOT NULL DEFAULT 'standalone'")
     conn.execute(
         "UPDATE execution_logs SET execution_group_id = printf('legacy-%d', id) WHERE execution_group_id IS NULL OR execution_group_id = ''"
     )
     conn.execute(
         "UPDATE execution_logs SET attempt_index = 1 WHERE attempt_index IS NULL OR attempt_index < 1"
+    )
+    conn.execute(
+        "UPDATE execution_logs SET execution_type = 'standalone' WHERE execution_type IS NULL OR execution_type = ''"
     )
     conn.commit()
     return conn
@@ -58,15 +63,16 @@ def insert_execution(conn: sqlite3.Connection, record: ExecutionRecord) -> int:
     cur = conn.execute(
         """
         INSERT INTO execution_logs (
-          invoked_at, execution_group_id, attempt_index, user_input, generated_command, executed, approved,
+          invoked_at, execution_group_id, attempt_index, execution_type, user_input, generated_command, executed, approved,
           provider, model, prompt_tokens, completion_tokens, total_tokens,
           risk_level, exit_code, cwd
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             record.invoked_at,
             record.execution_group_id,
             record.attempt_index,
+            record.execution_type,
             record.user_input,
             record.generated_command,
             int(record.executed),
@@ -133,7 +139,7 @@ def _build_execution_sessions(
     where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to)
     cur = conn.execute(
         f"""
-        SELECT id, invoked_at, execution_group_id, attempt_index, user_input, generated_command, executed, approved,
+        SELECT id, invoked_at, execution_group_id, attempt_index, execution_type, user_input, generated_command, executed, approved,
                provider, model, prompt_tokens, completion_tokens, total_tokens,
                risk_level, exit_code, cwd
         FROM execution_logs
@@ -168,6 +174,7 @@ def _start_session(row: sqlite3.Row, session_key: str) -> dict[str, Any]:
     session = {
         "session_key": session_key,
         "invoked_at": row["invoked_at"],
+        "type": str(row["execution_type"] or "standalone"),
         "user_input": row["user_input"],
         "generated_command": row["generated_command"],
         "final_command": row["generated_command"],
@@ -217,6 +224,7 @@ def _append_attempt(session: dict[str, Any] | None, row: sqlite3.Row) -> None:
     }
     session["generated_command"] = row["generated_command"]
     session["final_command"] = row["generated_command"]
+    session["type"] = str(row["execution_type"] or session.get("type") or "standalone")
     session["executed"] = int(row["executed"])
     session["approved"] = int(row["approved"])
     session["provider"] = row["provider"]

@@ -195,6 +195,7 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
         (
             "<tr>"
             f"<td>{html.escape(str(row['invoked_at']))}</td>"
+            f"<td>{html.escape(str(row['type']))}</td>"
             f"<td>{html.escape(str(row['user_input']))}</td>"
             f"<td>{html.escape(str(row['cwd']))}</td>"
             "<td>"
@@ -502,7 +503,7 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       <div class="table-scroll">
       <table>
         <thead>
-          <tr><th class="col-when">When</th><th class="col-user-input">User input</th><th class="col-cwd">cwd</th><th class="col-command">Final command</th><th class="col-tries">Tries</th><th class="col-executed">Executed</th><th class="col-provider">Provider</th><th class="col-model">Model</th><th class="col-total-tokens">Total tokens</th></tr>
+          <tr><th class="col-when">When</th><th>Type</th><th class="col-user-input">User input</th><th class="col-cwd">cwd</th><th class="col-command">Final command</th><th class="col-tries">Tries</th><th class="col-executed">Executed</th><th class="col-provider">Provider</th><th class="col-model">Model</th><th class="col-total-tokens">Total tokens</th></tr>
         </thead>
         <tbody>{execution_rows}</tbody>
       </table>

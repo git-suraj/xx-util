@@ -77,6 +77,7 @@ class ExecutionRecord:
     invoked_at: str
     execution_group_id: str
     attempt_index: int
+    execution_type: str
     user_input: str
     generated_command: str
     executed: bool

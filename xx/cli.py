@@ -22,6 +22,10 @@ from xx.types import ChatTurn, ExecutionRecord
 
 def main() -> int:
     argv = sys.argv[1:]
+    if not argv:
+        chat_parser = _build_chat_parser()
+        args = chat_parser.parse_args([])
+        return _run_chat_command(args)
     if argv[:1] == ["report"]:
         report_argv = argv[1:]
         if report_argv[:1] == ["serve"]:
@@ -81,6 +85,7 @@ def main() -> int:
             invoked_at=_local_timestamp(),
             execution_group_id=execution_group_id,
             attempt_index=1,
+            execution_type="standalone",
             user_input=user_request,
             generated_command=proposal.command,
             executed=False,
@@ -220,6 +225,7 @@ def _run_chat_command(args: argparse.Namespace) -> int:
                 invoked_at=_local_timestamp(),
                 execution_group_id=execution_group_id,
                 attempt_index=turn_index,
+                execution_type="chat",
                 user_input=user_message,
                 generated_command=proposal.command,
                 executed=False,
@@ -461,6 +467,7 @@ def _attempt_chat_repair(
             invoked_at=_local_timestamp(),
             execution_group_id=execution_group_id,
             attempt_index=turn_index,
+            execution_type="chat",
             user_input=user_message,
             generated_command=proposal.command,
             executed=False,
@@ -598,6 +605,7 @@ def _attempt_repair(
             invoked_at=_local_timestamp(),
             execution_group_id=execution_group_id,
             attempt_index=next_attempt_index,
+            execution_type="standalone",
             user_input=user_request,
             generated_command=proposal.command,
             executed=False,
