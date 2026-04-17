@@ -263,17 +263,23 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
   <title>xx report</title>
   <style>
     :root {{
-      color-scheme: light;
-      --bg: #f4efe6;
-      --panel: #fffdf8;
-      --ink: #1f2a30;
-      --accent: #8a3b12;
-      --line: #d9ccb6;
+      color-scheme: dark;
+      --bg: #0b0b0c;
+      --bg-elevated: #121316;
+      --panel: #17191d;
+      --panel-strong: #1d2026;
+      --ink: #f3f4f6;
+      --ink-muted: #a0a7b4;
+      --accent: #7dd3fc;
+      --accent-strong: #38bdf8;
+      --line: #2a2f39;
+      --line-soft: #20242d;
+      --code-bg: #101218;
     }}
     body {{
       margin: 0;
-      font-family: Georgia, "Iowan Old Style", serif;
-      background: linear-gradient(180deg, #efe4d3 0%, var(--bg) 100%);
+      font-family: Inter, "SF Pro Text", "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg) 100%);
       color: var(--ink);
     }}
     main {{
@@ -281,15 +287,29 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       margin: 0 auto;
       padding: 32px 20px 56px;
     }}
-    h1, h2 {{ margin-bottom: 8px; }}
-    p {{ margin-top: 0; }}
+    h1, h2 {{
+      margin-bottom: 8px;
+      letter-spacing: 0;
+    }}
+    h1 {{
+      font-size: 30px;
+      font-weight: 700;
+    }}
+    h2 {{
+      font-size: 18px;
+      font-weight: 600;
+    }}
+    p {{
+      margin-top: 0;
+      color: var(--ink-muted);
+    }}
     section {{
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 14px;
+      border-radius: 8px;
       padding: 18px;
       margin-top: 18px;
-      box-shadow: 0 8px 30px rgba(31, 42, 48, 0.06);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
     }}
     .table-scroll {{
       overflow-x: auto;
@@ -316,15 +336,24 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       color: var(--accent);
       display: block;
       margin-bottom: 6px;
+      font-weight: 600;
     }}
     input {{
       width: 100%;
       box-sizing: border-box;
       padding: 8px 10px;
       border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #fff;
+      border-radius: 6px;
+      background: var(--bg-elevated);
       color: var(--ink);
+    }}
+    input::placeholder {{
+      color: var(--ink-muted);
+    }}
+    input:focus {{
+      outline: 2px solid rgba(56, 189, 248, 0.24);
+      outline-offset: 0;
+      border-color: var(--accent-strong);
     }}
     .actions {{
       display: flex;
@@ -336,18 +365,18 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       width: auto;
       min-width: 140px;
       padding: 10px 18px;
-      border-radius: 999px;
-      border: 1px solid #9d4a1d;
-      background: linear-gradient(180deg, #b95a22 0%, #8a3b12 100%);
-      color: #fff;
+      border-radius: 6px;
+      border: 1px solid #0ea5e9;
+      background: linear-gradient(180deg, #38bdf8 0%, #0284c7 100%);
+      color: #04131b;
       font-weight: 700;
       cursor: pointer;
-      box-shadow: 0 10px 24px rgba(138, 59, 18, 0.18);
+      box-shadow: 0 10px 24px rgba(2, 132, 199, 0.24);
     }}
     .button.secondary {{
       min-width: 96px;
       border-color: var(--line);
-      background: #fff;
+      background: var(--panel-strong);
       color: var(--ink);
       box-shadow: none;
     }}
@@ -381,24 +410,39 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       text-decoration: none;
       font-weight: 600;
     }}
+    .pager a:hover {{
+      color: var(--accent-strong);
+    }}
     th, td {{
-      border-top: 1px solid var(--line);
+      border-top: 1px solid var(--line-soft);
       padding: 10px 8px;
       text-align: left;
       vertical-align: top;
       overflow-wrap: anywhere;
       word-break: break-word;
     }}
-    th {{ color: var(--accent); }}
+    thead th {{
+      border-top: 0;
+    }}
+    tbody tr:hover {{
+      background: rgba(125, 211, 252, 0.03);
+    }}
+    th {{
+      color: var(--accent);
+      font-weight: 600;
+    }}
     code {{
       font-family: "SFMono-Regular", Menlo, monospace;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
+      background: var(--code-bg);
+      padding: 2px 4px;
+      border-radius: 4px;
     }}
     .attempts-summary {{
       margin-top: 6px;
       font-size: 12px;
-      color: #6a5b49;
+      color: var(--ink-muted);
       line-height: 1.35;
     }}
     .col-when {{
