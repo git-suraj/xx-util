@@ -75,6 +75,7 @@ class SafetyAssessment:
 @dataclass(slots=True)
 class ExecutionRecord:
     invoked_at: str
+    interaction_id: str
     execution_group_id: str
     attempt_index: int
     execution_type: str

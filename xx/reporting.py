@@ -43,6 +43,7 @@ def _make_handler(config: ReportingConfig):
                         days=filters["days"],
                         date_from=filters["from"],
                         date_to=filters["to"],
+                        search=filters["search"],
                     )
                     pagination = _pagination_payload(total, filters["page"], filters["page_size"])
                     rows = fetch_executions(
@@ -50,6 +51,7 @@ def _make_handler(config: ReportingConfig):
                         days=filters["days"],
                         date_from=filters["from"],
                         date_to=filters["to"],
+                        search=filters["search"],
                         page=pagination["page"],
                         page_size=filters["page_size"],
                     )
@@ -58,12 +60,14 @@ def _make_handler(config: ReportingConfig):
                         days=filters["days"],
                         date_from=filters["from"],
                         date_to=filters["to"],
+                        search=filters["search"],
                     )
                     by_provider = fetch_token_summary_by_provider(
                         conn,
                         days=filters["days"],
                         date_from=filters["from"],
                         date_to=filters["to"],
+                        search=filters["search"],
                     )
                     body = _render_html({**filters, "page": pagination["page"]}, total, rows, by_model, by_provider)
                     self._write_response(200, body, "text/html; charset=utf-8")
@@ -74,6 +78,7 @@ def _make_handler(config: ReportingConfig):
                         days=filters["days"],
                         date_from=filters["from"],
                         date_to=filters["to"],
+                        search=filters["search"],
                     )
                     pagination = _pagination_payload(total, filters["page"], filters["page_size"])
                     rows = [
@@ -83,6 +88,7 @@ def _make_handler(config: ReportingConfig):
                             days=filters["days"],
                             date_from=filters["from"],
                             date_to=filters["to"],
+                            search=filters["search"],
                             page=pagination["page"],
                             page_size=filters["page_size"],
                         )
@@ -103,6 +109,7 @@ def _make_handler(config: ReportingConfig):
                             days=filters["days"],
                             date_from=filters["from"],
                             date_to=filters["to"],
+                            search=filters["search"],
                         )
                     ]
                     self._write_json({"filters": filters, "rows": rows})
@@ -115,6 +122,7 @@ def _make_handler(config: ReportingConfig):
                             days=filters["days"],
                             date_from=filters["from"],
                             date_to=filters["to"],
+                            search=filters["search"],
                         )
                     ]
                     self._write_json({"filters": filters, "rows": rows})
@@ -145,6 +153,7 @@ def _read_filters(query: str, default_days: int) -> dict:
     days_value = parsed.get("days", [str(default_days)])[0]
     date_from = _normalize_datetime_input(parsed.get("from", [""])[0])
     date_to = _normalize_datetime_input(parsed.get("to", [""])[0])
+    search = parsed.get("search", [""])[0].strip()
     page = _read_positive_int(parsed.get("page", ["1"])[0], 1)
     page_size = _read_positive_int(parsed.get("page_size", ["50"])[0], 50)
     page_size = min(page_size, 200)
@@ -156,6 +165,7 @@ def _read_filters(query: str, default_days: int) -> dict:
         "days": max(1, days),
         "from": date_from,
         "to": date_to,
+        "search": search,
         "page": page,
         "page_size": page_size,
     }
@@ -194,19 +204,20 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
     execution_rows = "".join(
         (
             "<tr>"
-            f"<td>{html.escape(str(row['invoked_at']))}</td>"
-            f"<td>{html.escape(str(row['type']))}</td>"
-            f"<td>{html.escape(str(row['user_input']))}</td>"
-            f"<td>{html.escape(str(row['cwd']))}</td>"
-            "<td>"
+            f"<td class=\"col-id cell-nowrap\">{html.escape(str(row['interaction_id']))}</td>"
+            f"<td class=\"col-when cell-nowrap\">{html.escape(str(row['invoked_at']))}</td>"
+            f"<td class=\"col-type cell-nowrap\">{html.escape(str(row['type']))}</td>"
+            f"<td class=\"col-user-input cell-wrap\">{html.escape(str(row['user_input']))}</td>"
+            f"<td class=\"col-cwd cell-wrap\">{html.escape(str(row['cwd']))}</td>"
+            "<td class=\"col-command\">"
             f"<code>{html.escape(str(row['final_command']))}</code>"
             f"<div class=\"attempts-summary\">{html.escape(str(row['attempts_summary']))}</div>"
             "</td>"
-            f"<td>{html.escape(str(row['tries']))}</td>"
-            f"<td>{'yes' if row['executed'] else 'no'}</td>"
-            f"<td>{html.escape(str(row['provider']))}</td>"
-            f"<td>{html.escape(str(row['model']))}</td>"
-            f"<td>{html.escape(str(row['total_tokens'] or 0))}</td>"
+            f"<td class=\"col-tries cell-nowrap\">{html.escape(str(row['tries']))}</td>"
+            f"<td class=\"col-executed cell-nowrap\">{'yes' if row['executed'] else 'no'}</td>"
+            f"<td class=\"col-provider cell-nowrap\">{html.escape(str(row['provider']))}</td>"
+            f"<td class=\"col-model cell-wrap\">{html.escape(str(row['model']))}</td>"
+            f"<td class=\"col-total-tokens cell-nowrap\">{html.escape(str(row['total_tokens'] or 0))}</td>"
             "</tr>"
         )
         for row in executions
@@ -235,6 +246,7 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
     query_base = {
         "from": filters["from"] or "",
         "to": filters["to"] or "",
+        "search": filters["search"] or "",
         "days": filters["days"],
         "page_size": filters["page_size"],
     }
@@ -284,7 +296,7 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       color: var(--ink);
     }}
     main {{
-      max-width: 1200px;
+      max-width: 1600px;
       margin: 0 auto;
       padding: 32px 20px 56px;
     }}
@@ -317,7 +329,8 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
     }}
     table {{
       width: 100%;
-      table-layout: fixed;
+      min-width: 1680px;
+      table-layout: auto;
       border-collapse: collapse;
       font-size: 14px;
     }}
@@ -419,11 +432,12 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       padding: 10px 8px;
       text-align: left;
       vertical-align: top;
-      overflow-wrap: anywhere;
-      word-break: break-word;
+      overflow-wrap: normal;
+      word-break: normal;
     }}
     thead th {{
       border-top: 0;
+      white-space: nowrap;
     }}
     tbody tr:hover {{
       background: rgba(125, 211, 252, 0.03);
@@ -433,12 +447,21 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       font-weight: 600;
     }}
     code {{
+      display: inline-block;
+      max-width: 100%;
       font-family: "SFMono-Regular", Menlo, monospace;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       background: var(--code-bg);
       padding: 2px 4px;
       border-radius: 4px;
+    }}
+    .cell-nowrap {{
+      white-space: nowrap;
+    }}
+    .cell-wrap {{
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }}
     .attempts-summary {{
       margin-top: 6px;
@@ -447,31 +470,37 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       line-height: 1.35;
     }}
     .col-when {{
-      width: 10%;
+      width: 150px;
+    }}
+    .col-id {{
+      width: 180px;
+    }}
+    .col-type {{
+      width: 110px;
     }}
     .col-user-input {{
-      width: 22%;
+      width: 340px;
     }}
     .col-cwd {{
-      width: 14%;
+      width: 300px;
     }}
     .col-command {{
-      width: 22%;
+      width: 500px;
     }}
     .col-tries {{
-      width: 5%;
+      width: 60px;
     }}
     .col-executed {{
-      width: 7%;
+      width: 90px;
     }}
     .col-provider {{
-      width: 7%;
+      width: 120px;
     }}
     .col-model {{
-      width: 7%;
+      width: 180px;
     }}
     .col-total-tokens {{
-      width: 7%;
+      width: 110px;
     }}
   </style>
 </head>
@@ -490,9 +519,16 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
           <label for="to">To (24h)</label>
           <input id="to" name="to" type="text" placeholder="YYYY-MM-DD HH:MM" value="{html.escape((filters['to'] or '').replace('T', ' '))}">
         </div>
+        <div class="field">
+          <label for="search">Search</label>
+          <input id="search" name="search" type="text" placeholder="user input or final command" value="{html.escape(filters['search'] or '')}">
+        </div>
+        <div class="field">
+          <label for="page_size">Page size</label>
+          <input id="page_size" name="page_size" type="number" min="1" max="200" value="{filters['page_size']}">
+        </div>
         <div class="actions">
           <input type="hidden" name="page" value="1">
-          <input type="hidden" name="page_size" value="{filters['page_size']}">
           <input type="hidden" name="days" value="{filters['days']}">
           <input class="button" type="submit" value="Apply">
         </div>
@@ -503,23 +539,12 @@ def _render_html(filters: dict, total: int, executions: list[dict], by_model: li
       <div class="table-scroll">
       <table>
         <thead>
-          <tr><th class="col-when">When</th><th>Type</th><th class="col-user-input">User input</th><th class="col-cwd">cwd</th><th class="col-command">Final command</th><th class="col-tries">Tries</th><th class="col-executed">Executed</th><th class="col-provider">Provider</th><th class="col-model">Model</th><th class="col-total-tokens">Total tokens</th></tr>
+          <tr><th class="col-id">ID</th><th class="col-when">When</th><th class="col-type">Type</th><th class="col-user-input">User input</th><th class="col-cwd">cwd</th><th class="col-command">Final command</th><th class="col-tries">Tries</th><th class="col-executed">Executed</th><th class="col-provider">Provider</th><th class="col-model">Model</th><th class="col-total-tokens">Total tokens</th></tr>
         </thead>
         <tbody>{execution_rows}</tbody>
       </table>
       </div>
       <div class="table-controls">
-        <form class="page-size-form" method="get" action="/report">
-          <div class="field">
-            <label for="page_size">Page size</label>
-            <input id="page_size" name="page_size" type="number" min="1" max="200" value="{filters['page_size']}">
-          </div>
-          <input type="hidden" name="page" value="1">
-          <input type="hidden" name="from" value="{html.escape(filters['from'] or '')}">
-          <input type="hidden" name="to" value="{html.escape(filters['to'] or '')}">
-          <input type="hidden" name="days" value="{filters['days']}">
-          <input class="button secondary" type="submit" value="Update">
-        </form>
         <div class="pager">
           <div>Page {pagination['page']} of {pagination['total_pages']} · {pagination['total']} total row(s)</div>
           <div>{prev_link} {" " if prev_link and next_link else ""}{next_link}</div>

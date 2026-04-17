@@ -73,6 +73,7 @@ def main() -> int:
         except ProviderError as exc:
             print(_format_error(f"Provider error: {exc}", config.colors), file=sys.stderr)
             return 1
+        interaction_id = uuid.uuid4().hex
         execution_group_id = uuid.uuid4().hex
 
         safety = assess_command(proposal.command, machine)
@@ -83,6 +84,7 @@ def main() -> int:
 
         record = ExecutionRecord(
             invoked_at=_local_timestamp(),
+            interaction_id=interaction_id,
             execution_group_id=execution_group_id,
             attempt_index=1,
             execution_type="standalone",
@@ -127,6 +129,7 @@ def main() -> int:
             user_request=user_request,
             previous_command=proposal.command,
             previous_result=result,
+            interaction_id=interaction_id,
             execution_group_id=execution_group_id,
             next_attempt_index=2,
         )
@@ -169,6 +172,7 @@ def _run_chat_command(args: argparse.Namespace) -> int:
     conn = connect(config.reporting.database_path)
     turns: list[ChatTurn] = []
     turn_index = 1
+    interaction_id = uuid.uuid4().hex
     _print_chat_header(config.colors)
     if not include_command_output:
         _print_system(
@@ -223,6 +227,7 @@ def _run_chat_command(args: argparse.Namespace) -> int:
 
             record = ExecutionRecord(
                 invoked_at=_local_timestamp(),
+                interaction_id=interaction_id,
                 execution_group_id=execution_group_id,
                 attempt_index=turn_index,
                 execution_type="chat",
@@ -297,6 +302,7 @@ def _run_chat_command(args: argparse.Namespace) -> int:
                     user_message=user_message,
                     previous_command=proposal.command,
                     previous_result=result,
+                    interaction_id=interaction_id,
                     execution_group_id=execution_group_id,
                     next_turn_index=turn_index + 1,
                 )
@@ -419,6 +425,7 @@ def _attempt_chat_repair(
     previous_command: str,
     previous_result,
     *,
+    interaction_id: str,
     execution_group_id: str,
     next_turn_index: int,
 ) -> int:
@@ -465,6 +472,7 @@ def _attempt_chat_repair(
 
         record = ExecutionRecord(
             invoked_at=_local_timestamp(),
+            interaction_id=interaction_id,
             execution_group_id=execution_group_id,
             attempt_index=turn_index,
             execution_type="chat",
@@ -558,6 +566,7 @@ def _attempt_repair(
     previous_command,
     previous_result,
     *,
+    interaction_id: str,
     execution_group_id: str,
     next_attempt_index: int,
 ) -> int:
@@ -603,6 +612,7 @@ def _attempt_repair(
 
         record = ExecutionRecord(
             invoked_at=_local_timestamp(),
+            interaction_id=interaction_id,
             execution_group_id=execution_group_id,
             attempt_index=next_attempt_index,
             execution_type="standalone",

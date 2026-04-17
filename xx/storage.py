@@ -11,6 +11,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS execution_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   invoked_at TEXT NOT NULL,
+  interaction_id TEXT,
   execution_group_id TEXT,
   attempt_index INTEGER,
   execution_type TEXT NOT NULL DEFAULT 'standalone',
@@ -35,11 +36,18 @@ def connect(database_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(database_path)
     conn.row_factory = sqlite3.Row
     conn.execute(SCHEMA)
+    _ensure_column(conn, "interaction_id", "TEXT")
     _ensure_column(conn, "execution_group_id", "TEXT")
     _ensure_column(conn, "attempt_index", "INTEGER")
     _ensure_column(conn, "execution_type", "TEXT NOT NULL DEFAULT 'standalone'")
     conn.execute(
+        "UPDATE execution_logs SET interaction_id = execution_group_id WHERE interaction_id IS NULL OR interaction_id = ''"
+    )
+    conn.execute(
         "UPDATE execution_logs SET execution_group_id = printf('legacy-%d', id) WHERE execution_group_id IS NULL OR execution_group_id = ''"
+    )
+    conn.execute(
+        "UPDATE execution_logs SET interaction_id = execution_group_id WHERE interaction_id IS NULL OR interaction_id = ''"
     )
     conn.execute(
         "UPDATE execution_logs SET attempt_index = 1 WHERE attempt_index IS NULL OR attempt_index < 1"
@@ -63,13 +71,14 @@ def insert_execution(conn: sqlite3.Connection, record: ExecutionRecord) -> int:
     cur = conn.execute(
         """
         INSERT INTO execution_logs (
-          invoked_at, execution_group_id, attempt_index, execution_type, user_input, generated_command, executed, approved,
+          invoked_at, interaction_id, execution_group_id, attempt_index, execution_type, user_input, generated_command, executed, approved,
           provider, model, prompt_tokens, completion_tokens, total_tokens,
           risk_level, exit_code, cwd
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             record.invoked_at,
+            record.interaction_id,
             record.execution_group_id,
             record.attempt_index,
             record.execution_type,
@@ -111,10 +120,17 @@ def fetch_executions(
     days: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    search: str | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> list[dict[str, Any]]:
-    sessions = _build_execution_sessions(conn, days=days, date_from=date_from, date_to=date_to)
+    sessions = _build_execution_sessions(
+        conn,
+        days=days,
+        date_from=date_from,
+        date_to=date_to,
+        search=search,
+    )
     offset = max(0, page - 1) * page_size
     return sessions[offset : offset + page_size]
 
@@ -125,8 +141,17 @@ def count_executions(
     days: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    search: str | None = None,
 ) -> int:
-    return len(_build_execution_sessions(conn, days=days, date_from=date_from, date_to=date_to))
+    return len(
+        _build_execution_sessions(
+            conn,
+            days=days,
+            date_from=date_from,
+            date_to=date_to,
+            search=search,
+        )
+    )
 
 
 def _build_execution_sessions(
@@ -135,11 +160,12 @@ def _build_execution_sessions(
     days: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    search: str | None = None,
 ) -> list[dict[str, Any]]:
-    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to)
+    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to, search=search)
     cur = conn.execute(
         f"""
-        SELECT id, invoked_at, execution_group_id, attempt_index, execution_type, user_input, generated_command, executed, approved,
+        SELECT id, invoked_at, interaction_id, execution_group_id, attempt_index, execution_type, user_input, generated_command, executed, approved,
                provider, model, prompt_tokens, completion_tokens, total_tokens,
                risk_level, exit_code, cwd
         FROM execution_logs
@@ -174,6 +200,7 @@ def _start_session(row: sqlite3.Row, session_key: str) -> dict[str, Any]:
     session = {
         "session_key": session_key,
         "invoked_at": row["invoked_at"],
+        "interaction_id": str(row["interaction_id"] or session_key),
         "type": str(row["execution_type"] or "standalone"),
         "user_input": row["user_input"],
         "generated_command": row["generated_command"],
@@ -224,6 +251,7 @@ def _append_attempt(session: dict[str, Any] | None, row: sqlite3.Row) -> None:
     }
     session["generated_command"] = row["generated_command"]
     session["final_command"] = row["generated_command"]
+    session["interaction_id"] = str(row["interaction_id"] or session.get("interaction_id") or session["session_key"])
     session["type"] = str(row["execution_type"] or session.get("type") or "standalone")
     session["executed"] = int(row["executed"])
     session["approved"] = int(row["approved"])
@@ -245,8 +273,9 @@ def fetch_token_summary_by_model(
     days: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    search: str | None = None,
 ) -> list[sqlite3.Row]:
-    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to)
+    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to, search=search)
     cur = conn.execute(
         f"""
         SELECT model, provider,
@@ -270,8 +299,9 @@ def fetch_token_summary_by_provider(
     days: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    search: str | None = None,
 ) -> list[sqlite3.Row]:
-    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to)
+    where_sql, params = _build_filters(days=days, date_from=date_from, date_to=date_to, search=search)
     cur = conn.execute(
         f"""
         SELECT provider,
@@ -327,6 +357,7 @@ def _build_filters(
     days: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    search: str | None = None,
 ) -> tuple[str, tuple[Any, ...]]:
     clauses: list[str] = []
     params: list[Any] = []
@@ -339,6 +370,10 @@ def _build_filters(
     if not date_from and not date_to and days is not None:
         clauses.append("invoked_at >= datetime('now', 'localtime', ?)")
         params.append(f"-{days} days")
+    if search and search.strip():
+        clauses.append("(lower(user_input) LIKE ? OR lower(generated_command) LIKE ?)")
+        search_term = f"%{search.strip().lower()}%"
+        params.extend([search_term, search_term])
     if not clauses:
         return "", tuple()
     return "WHERE " + " AND ".join(clauses), tuple(params)
